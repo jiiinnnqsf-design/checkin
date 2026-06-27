@@ -243,7 +243,7 @@
     <p style="color:var(--text-muted);font-size:15px;line-height:1.9;margin-bottom:26px">进入后可以看到大家的待办清单<br>互相督促，一起学习</p>
     <div id="welcomeMemberCount" style="background:var(--card);border-radius:14px;padding:16px;margin-bottom:22px;box-shadow:var(--shadow);font-size:14px;color:var(--text-muted);border:1px solid var(--border)">加载中…</div>
     <button class="btn btn-primary" onclick="showEnterModal()" style="display:block;font-size:16px;padding:15px">进入自习室 →</button>
-    <a href="/" style="display:block;margin-top:14px;color:var(--text-muted);font-size:13px;text-decoration:none">← 返回打卡</a>
+    <a href="/checkin/" style="display:block;margin-top:14px;color:var(--text-muted);font-size:13px;text-decoration:none">← 返回打卡</a>
   </div>
 </div>
 
@@ -251,12 +251,12 @@
 <div id="roomScreen" class="hidden">
   <header>
     <div style="display:flex;align-items:center;gap:10px">
-      <a href="/" class="back-link">←</a>
+      <a href="/checkin/" class="back-link">←</a>
       <span class="room-title">共享自习室</span>
       <span class="room-badge" id="memberCountBadge">0 人在室</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
-      <a href="/todos.html" style="font-size:12px;color:var(--text-muted);text-decoration:none;padding:4px 10px;border:1px solid var(--border);border-radius:8px;">📝 我的待办</a>
+      <a href="/checkin/todos.html" style="font-size:12px;color:var(--text-muted);text-decoration:none;padding:4px 10px;border:1px solid var(--border);border-radius:8px;">📝 我的待办</a>
       <div class="user-chip">👤 <span id="headerName">--</span></div>
     </div>
   </header>
@@ -297,7 +297,7 @@
   </div>
 </div>
 
-<footer>语擦女读书会 &nbsp;·&nbsp; <a href="/" style="color:#c4c8da;text-decoration:none">返回打卡</a></footer>
+<footer>语擦女读书会 &nbsp;·&nbsp; <a href="/checkin/" style="color:#c4c8da;text-decoration:none">返回打卡</a></footer>
 
 <script>
 const SUPABASE_URL = 'https://nepjhfhbxgxlqsbhvwsa.supabase.co'
