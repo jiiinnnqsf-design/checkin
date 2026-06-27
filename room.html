@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>共享自习室</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --primary: #7c6fcd; --primary-light: #eeeaff; --primary-mid: #b8b0ee;
+    --success: #5aaa7e; --success-light: #e8f7ef;
+    --warning: #d9965a; --warning-light: #fdf3e8;
+    --danger: #d97a7a; --danger-light: #fdf0f0;
+    --text: #3a3a4a; --text-muted: #8a8ea8;
+    --border: #e6e8f2; --bg: #f5f5fb; --card: #fff;
+    --radius: 16px; --shadow: 0 2px 14px rgba(80,70,150,0.07);
+    --shadow-lg: 0 8px 28px rgba(100,90,180,0.13);
+  }
+  body { font-family: -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 60px; }
+  .loading-mask { position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:999;flex-direction:column;gap:12px; }
+  .loading-dot { font-size:32px;animation:pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes slideUp{from{transform:translateY(18px);opacity:0}to{transform:translateY(0);opacity:1}}
+  @keyframes checkBounce{0%{transform:scale(1)}35%{transform:scale(1.55);background:var(--success);border-color:var(--success)}65%{transform:scale(.9)}100%{transform:scale(1)}}
+  .hidden { display:none !important; }
+
+  /* Modal */
+  .modal-overlay{position:fixed;inset:0;background:rgba(40,35,80,.38);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
+  .modal{background:var(--card);border-radius:var(--radius);padding:34px 26px;width:100%;max-width:400px;box-shadow:var(--shadow-lg);animation:slideUp .3s ease;}
+  .modal-icon{font-size:50px;text-align:center;margin-bottom:14px;}
+  .modal h2{font-size:20px;font-weight:800;text-align:center;margin-bottom:10px;}
+  .modal-desc{color:var(--text-muted);font-size:14px;line-height:1.8;margin-bottom:18px;text-align:center;}
+  .modal-rules{background:var(--bg);border-radius:12px;padding:13px 16px;margin-bottom:18px;}
+  .modal-rules li{font-size:13px;color:var(--text-muted);line-height:2.1;list-style:none;}
+  .modal-rules li::before{content:'·  ';color:var(--primary);}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;background:var(--bg);border-radius:12px;padding:13px 16px;margin-bottom:18px;}
+  .toggle-label{font-size:14px;font-weight:600;}
+  .toggle-sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
+  .toggle{position:relative;width:44px;height:24px;flex-shrink:0;}
+  .toggle input{opacity:0;width:0;height:0;}
+  .toggle-slider{position:absolute;inset:0;background:var(--border);border-radius:12px;cursor:pointer;transition:.3s;}
+  .toggle-slider::before{content:'';position:absolute;left:3px;top:3px;width:18px;height:18px;background:white;border-radius:50%;transition:.3s;}
+  .toggle input:checked+.toggle-slider{background:var(--primary);}
+  .toggle input:checked+.toggle-slider::before{transform:translateX(20px);}
+  .btn{display:block;width:100%;padding:13px;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;transition:all .2s;}
+  .btn-primary{background:linear-gradient(135deg,#8b82d4,#a89be0);color:white;box-shadow:0 3px 14px rgba(120,110,200,.28);}
+  .btn-primary:hover{transform:translateY(-1px);}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none;}
+  .btn-outline{background:transparent;border:1.5px solid var(--border);color:var(--text-muted);font-size:14px;padding:10px;margin-top:10px;}
+  .btn-outline:hover{border-color:var(--primary);color:var(--primary);}
+  .input-wrap{margin-bottom:16px;}
+  .input-wrap label{display:block;font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:7px;}
+  .input-wrap input{width:100%;padding:12px 15px;border:2px solid var(--border);border-radius:12px;font-size:15px;outline:none;transition:border-color .2s;font-family:inherit;color:var(--text);}
+  .input-wrap input:focus{border-color:var(--primary);}
+
+  /* Header */
+  header{background:var(--card);border-bottom:1px solid var(--border);padding:0 20px;height:58px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;box-shadow:0 1px 6px rgba(80,70,140,.06);}
+  .room-title{font-size:16px;font-weight:800;color:var(--primary);}
+  .room-badge{background:var(--success-light);color:var(--success);font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;}
+  .user-chip{display:flex;align-items:center;gap:6px;background:var(--primary-light);color:var(--primary);padding:5px 12px;border-radius:20px;font-size:13px;font-weight:600;}
+  .back-link{color:var(--text-muted);font-size:20px;text-decoration:none;line-height:1;}
+  .back-link:hover{color:var(--primary);}
+
+  .container{max-width:680px;margin:0 auto;padding:18px 16px;}
+
+  /* Calendar card */
+  .cal-card{background:var(--card);border-radius:var(--radius);margin-bottom:14px;box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden;}
+  .cal-title-row{display:flex;align-items:center;gap:6px;padding:12px 14px 6px;position:relative;}
+  .cal-month{font-size:13px;font-weight:800;color:var(--primary);flex:1;text-align:center;cursor:pointer;padding:3px 8px;border-radius:8px;transition:background .12s;}
+  .cal-month:hover{background:var(--primary-light);}
+  .cal-hint{font-size:11px;color:var(--text-muted);}
+  .cal-nav{background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:16px;padding:2px 6px;border-radius:6px;line-height:1;}
+  .cal-nav:hover{background:var(--bg);color:var(--primary);}
+  .ym-popup{position:absolute;top:40px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 28px rgba(80,70,150,0.15);z-index:50;padding:14px 16px;width:240px;}
+  .ym-year-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .ym-year-btn{background:none;border:none;cursor:pointer;font-size:16px;color:var(--text-muted);padding:2px 8px;border-radius:6px;}
+  .ym-year-btn:hover{background:var(--bg);color:var(--primary);}
+  .ym-year-val{font-size:15px;font-weight:800;color:var(--primary);}
+  .ym-months{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+  .ym-m{padding:6px 0;text-align:center;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text-muted);border:1.5px solid transparent;transition:all .12s;}
+  .ym-m:hover{background:var(--bg);color:var(--primary);}
+  .ym-m.active{background:var(--primary);color:white;border-color:var(--primary);}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;padding:0 10px 8px;}
+  .cal-dh{text-align:center;font-size:10px;color:var(--text-muted);font-weight:600;padding:3px 0;}
+  .cal-day{height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:7px;cursor:pointer;font-size:12px;gap:2px;transition:background .12s;user-select:none;}
+  .cal-day:hover:not(.empty){background:var(--bg);}
+  .cal-day.today{background:var(--primary-light);color:var(--primary);font-weight:800;}
+  .cal-day.selected{background:var(--primary)!important;color:white!important;}
+  .cal-dot{width:4px;height:4px;background:var(--primary);border-radius:50%;}
+  .cal-day.selected .cal-dot{background:rgba(255,255,255,.8);}
+  .cal-day.empty{cursor:default;}
+
+  /* Filter bar */
+  .filter-bar{display:flex;gap:6px;padding:0 18px 12px;}
+  .filter-tab{padding:6px 18px;border-radius:20px;border:1.5px solid var(--border);font-size:13px;font-weight:600;color:var(--text-muted);cursor:pointer;transition:all .15s;background:var(--bg);}
+  .filter-tab.active{background:var(--primary);border-color:var(--primary);color:white;}
+  .filter-tab:hover:not(.active){border-color:var(--primary-mid);color:var(--primary);}
+
+  /* Online bar */
+  .online-bar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+  .online-dot{width:7px;height:7px;background:var(--success);border-radius:50%;flex-shrink:0;animation:blink 2.5s infinite;}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+  .online-text{font-size:13px;color:var(--text-muted);font-weight:600;flex:1;}
+  .member-avatar-row{display:flex;gap:4px;flex-wrap:wrap;}
+  .mini-avatar{width:26px;height:26px;border-radius:50%;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px solid white;}
+
+  /* Member card */
+  .member-section{background:var(--card);border-radius:var(--radius);margin-bottom:12px;box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden;}
+  .member-header{padding:14px 18px;display:flex;align-items:center;gap:11px;cursor:pointer;user-select:none;transition:background .15s;}
+  .member-header:hover{background:#fafafe;}
+  .member-avatar{width:38px;height:38px;border-radius:50%;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;}
+  .member-header.mine .member-avatar{background:linear-gradient(135deg,#9d96e0,#b8b0ee);color:white;}
+  .member-name{font-weight:700;font-size:15px;}
+  .member-sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
+  .mine-badge{background:var(--primary-light);color:var(--primary);font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px;}
+  .progress-mini{display:flex;align-items:center;gap:5px;}
+  .progress-mini-bar{width:46px;height:4px;background:var(--border);border-radius:3px;}
+  .progress-mini-fill{height:100%;background:var(--primary-mid);border-radius:3px;}
+  .progress-mini-text{font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap;}
+  .chevron{color:#ccc;font-size:16px;transition:transform .25s;margin-left:4px;}
+  .member-section.open .chevron{transform:rotate(90deg);}
+  .member-body{display:none;padding:0 18px 14px;border-top:1px solid var(--border);}
+  .member-section.open .member-body{display:block;}
+
+  /* Todo items */
+  .todo-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid #f0f1f8;}
+  .todo-item:last-child{border-bottom:none;}
+  .todo-check{width:21px;height:21px;border:2px solid #d0d4e8;border-radius:7px;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;margin-top:1px;}
+  .todo-check:hover:not(.readonly){border-color:var(--success);background:var(--success-light);}
+  .todo-check.checked{background:var(--success);border-color:var(--success);}
+  .todo-check.checked::after{content:'✓';color:white;font-size:12px;font-weight:900;}
+  .todo-check.readonly{cursor:default;}
+  .todo-check.anim-complete{animation:checkBounce .45s ease forwards;}
+  .todo-main{flex:1;min-width:0;}
+  .todo-text{font-size:14px;line-height:1.6;cursor:text;}
+  .todo-text.done{text-decoration:line-through;color:var(--text-muted);}
+  .todo-edit-input{width:100%;border:1.5px solid var(--primary);border-radius:8px;padding:4px 10px;font-size:14px;font-family:inherit;outline:none;}
+  .todo-meta{margin-top:3px;}
+  .due-tag{font-size:11px;font-weight:600;padding:2px 7px;border-radius:5px;}
+  .due-today{background:#fef3e2;color:#b07a30;}
+  .due-week{background:#e8f4fd;color:#3a7abf;}
+  .due-month{background:#eef2ff;color:#5a67d8;}
+  .due-custom{background:var(--primary-light);color:var(--primary);}
+  .due-overdue{background:var(--danger-light);color:#b85a5a;}
+  .todo-actions{display:flex;align-items:center;gap:3px;opacity:0;transition:opacity .15s;flex-shrink:0;}
+  .todo-item:hover .todo-actions{opacity:1;}
+  .todo-action-btn{background:none;border:none;cursor:pointer;font-size:13px;padding:3px 5px;border-radius:6px;}
+  .todo-action-btn:hover{background:var(--bg);}
+  .todo-action-del{color:var(--danger);font-size:16px;}
+
+  /* Add todo */
+  .add-todo-wrap{margin-top:10px;background:var(--bg);border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;transition:border-color .2s,box-shadow .2s;}
+  .add-todo-wrap:focus-within{border-color:var(--primary);box-shadow:0 0 0 3px rgba(124,111,205,.1);}
+  .add-todo-row{display:flex;gap:8px;align-items:center;}
+  .add-todo-input{flex:1;border:none;outline:none;font-size:14px;font-family:inherit;background:transparent;color:var(--text);}
+  .add-todo-input::placeholder{color:#b8bcd0;}
+  .add-todo-submit{padding:6px 14px;background:var(--primary);color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;}
+  .add-todo-submit:hover{background:#6a5ec0;}
+  .date-chips{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap;}
+  .date-chip{padding:3px 11px;border:1.5px solid var(--border);border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted);background:var(--card);transition:all .12s;}
+  .date-chip.active{border-color:var(--primary);background:var(--primary-light);color:var(--primary);}
+  .date-chip:hover:not(.active){border-color:var(--primary-mid);}
+
+  /* Done section */
+  .done-toggle{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--text-muted);cursor:pointer;padding:10px 0 4px;user-select:none;}
+  .done-toggle:hover{color:var(--success);}
+  .done-chevron{font-size:12px;transition:transform .2s;}
+  .done-chevron.open{transform:rotate(90deg);}
+
+  /* Goals in room */
+  .goals-section{margin-top:14px;padding-top:12px;border-top:1px dashed var(--border);}
+  .goals-label{font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px;display:flex;align-items:center;gap:5px;}
+  .goal-row{display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid #f0f1f8;}
+  .goal-row:last-child{border-bottom:none;}
+  .goal-content{flex:1;min-width:0;}
+  .goal-title{font-size:13px;font-weight:700;}
+  .goal-note-sm{font-size:12px;color:var(--text-muted);margin-top:2px;line-height:1.5;}
+  .days-left{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:5px;font-size:11px;font-weight:700;margin-top:4px;}
+  .days-ok{background:var(--success-light);color:var(--success);}
+  .days-warn{background:var(--warning-light);color:var(--warning);}
+  .days-late{background:var(--danger-light);color:var(--danger);}
+
+  .todo-empty{font-size:13px;color:var(--text-muted);padding:14px 0;text-align:center;}
+  .exit-btn{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:30px;color:#b0b4c8;font-size:13px;cursor:pointer;padding:10px;}
+  .exit-btn:hover{color:var(--danger);}
+  .spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:white;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;}
+  footer{text-align:center;padding:20px;font-size:12px;color:#c4c8da;}
+</style>
+</head>
+<body>
+
+<div class="loading-mask" id="loadingMask">
+  <div class="loading-dot">📚</div>
+  <div style="color:var(--text-muted);font-size:14px">加载中…</div>
+</div>
+
+<!-- Name Modal -->
+<div class="modal-overlay hidden" id="nameModal">
+  <div class="modal">
+    <div class="modal-icon">👋</div>
+    <h2>请先输入名字</h2>
+    <div class="input-wrap" style="margin-bottom:18px">
+      <label>你的名字</label>
+      <input type="text" id="nameInput" placeholder="输入名字…" maxlength="20">
+    </div>
+    <button class="btn btn-primary" id="saveNameBtn">继续</button>
+  </div>
+</div>
+
+<!-- Enter Room Modal -->
+<div class="modal-overlay hidden" id="enterModal">
+  <div class="modal">
+    <div class="modal-icon">📚</div>
+    <h2>进入共享自习室</h2>
+    <div class="modal-desc">这里是大家共同学习的空间<br>进入后你的待办清单将对室内成员可见</div>
+    <ul class="modal-rules">
+      <li>可以看到其他成员的待办清单</li>
+      <li>只能操作自己的清单</li>
+      <li>可随时离开自习室</li>
+    </ul>
+    <div class="toggle-row">
+      <div>
+        <div class="toggle-label">公开我的打卡进度</div>
+        <div class="toggle-sub">让室友看到你的打卡天数</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="showProgressToggle" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <button class="btn btn-primary" id="enterRoomBtn">进入自习室 →</button>
+    <button class="btn btn-outline" onclick="document.getElementById('enterModal').classList.add('hidden')">取消</button>
+  </div>
+</div>
+
+<!-- Welcome screen -->
+<div id="welcomeScreen" class="hidden" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="max-width:420px;width:100%;text-align:center">
+    <div style="font-size:68px;margin-bottom:14px;line-height:1">📚</div>
+    <h1 style="font-size:25px;font-weight:800;margin-bottom:10px">共享自习室</h1>
+    <p style="color:var(--text-muted);font-size:15px;line-height:1.9;margin-bottom:26px">进入后可以看到大家的待办清单<br>互相督促，一起学习</p>
+    <div id="welcomeMemberCount" style="background:var(--card);border-radius:14px;padding:16px;margin-bottom:22px;box-shadow:var(--shadow);font-size:14px;color:var(--text-muted);border:1px solid var(--border)">加载中…</div>
+    <button class="btn btn-primary" onclick="showEnterModal()" style="display:block;font-size:16px;padding:15px">进入自习室 →</button>
+    <a href="/" style="display:block;margin-top:14px;color:var(--text-muted);font-size:13px;text-decoration:none">← 返回打卡</a>
+  </div>
+</div>
+
+<!-- Room screen -->
+<div id="roomScreen" class="hidden">
+  <header>
+    <div style="display:flex;align-items:center;gap:10px">
+      <a href="/" class="back-link">←</a>
+      <span class="room-title">共享自习室</span>
+      <span class="room-badge" id="memberCountBadge">0 人在室</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <a href="/todos.html" style="font-size:12px;color:var(--text-muted);text-decoration:none;padding:4px 10px;border:1px solid var(--border);border-radius:8px;">📝 我的待办</a>
+      <div class="user-chip">👤 <span id="headerName">--</span></div>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Calendar -->
+    <div class="cal-card">
+      <div class="cal-title-row">
+        <button class="cal-nav" onclick="shiftCal(-1)">‹</button>
+        <span class="cal-month" id="calMonth" onclick="toggleYMPicker()"></span>
+        <button class="cal-nav" onclick="shiftCal(1)">›</button>
+        <span class="cal-hint">紫点 = 我的待办</span>
+        <div class="ym-popup hidden" id="ymPopup"></div>
+      </div>
+      <div class="cal-grid" id="calGrid">
+        <div class="cal-dh">一</div><div class="cal-dh">二</div><div class="cal-dh">三</div>
+        <div class="cal-dh">四</div><div class="cal-dh">五</div><div class="cal-dh">六</div><div class="cal-dh">日</div>
+      </div>
+    </div>
+
+    <!-- Online bar -->
+    <div class="online-bar">
+      <div class="online-dot"></div>
+      <span class="online-text" id="onlineText">加载中…</span>
+      <div class="member-avatar-row" id="avatarRow"></div>
+    </div>
+
+    <!-- Filter bar above todos -->
+    <div class="filter-bar" style="padding:0 0 12px;">
+      <div class="filter-tab active" id="ft-today" onclick="setFilter('today')">本日</div>
+      <div class="filter-tab" id="ft-week"  onclick="setFilter('week')">本周</div>
+      <div class="filter-tab" id="ft-month" onclick="setFilter('month')">本月</div>
+      <div class="filter-tab" id="ft-all"   onclick="setFilter('all')">全部</div>
+    </div>
+
+    <div id="memberList"></div>
+    <div class="exit-btn" onclick="exitRoom()">🚪 离开自习室</div>
+  </div>
+</div>
+
+<footer>语擦女读书会 &nbsp;·&nbsp; <a href="/" style="color:#c4c8da;text-decoration:none">返回打卡</a></footer>
+
+<script>
+const SUPABASE_URL = 'https://nepjhfhbxgxlqsbhvwsa.supabase.co'
+const SUPABASE_ANON_KEY = 'sb_publishable_j18YmVc3EyArtsnNe_Oqbw_w4H90A_1'
+const { createClient } = supabase
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+let userName = localStorage.getItem('checkin_name') || ''
+let activeRound = null
+let roomMembers = [], allTodos = [], allGoals = [], myMembership = null, checkinStats = {}
+let addDueDate = 'today'
+let currentFilter = 'today'
+let doneOpen = {}
+let calViewYear = new Date().getFullYear()
+let calViewMonth = new Date().getMonth()
+
+/* --- Date utils --- */
+function todayStr(){ return new Date().toISOString().slice(0,10) }
+function weekStart(){ const d=new Date();d.setDate(d.getDate()-((d.getDay()+6)%7));return d.toISOString().slice(0,10) }
+function weekEnd()  { const d=new Date();d.setDate(d.getDate()-((d.getDay()+6)%7)+6);return d.toISOString().slice(0,10) }
+function monthStart(){ const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01` }
+function monthEnd() { const d=new Date();return new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().slice(0,10) }
+function getDueDate(k){ if(k==='today')return todayStr();if(k==='week')return weekEnd();if(k==='month')return monthEnd();return k||null }
+function filterMatches(t){
+  if(currentFilter==='all') return true
+  if(!t.due_date) return false
+  if(currentFilter==='today')return t.due_date===todayStr()
+  if(currentFilter==='week') return t.due_date>=weekStart()&&t.due_date<=weekEnd()
+  if(currentFilter==='month')return t.due_date>=monthStart()&&t.due_date<=monthEnd()
+  return t.due_date===currentFilter
+}
+function dueDateLabel(d){
+  if(!d)return null; const t=todayStr()
+  if(d<t)return{text:`${d} 已过期`,cls:'due-overdue'}
+  if(d===t)return{text:'今天',cls:'due-today'}
+  if(d>=weekStart()&&d<=weekEnd())return{text:'本周',cls:'due-week'}
+  if(d>=monthStart()&&d<=monthEnd())return{text:'本月',cls:'due-month'}
+  return{text:d,cls:'due-custom'}
+}
+function daysLeft(deadline){
+  if(!deadline)return null
+  return Math.ceil((new Date(deadline)-new Date(todayStr()))/(1000*86400))
+}
+
+/* --- Init --- */
+async function init(){
+  const{data:round}=await db.from('rounds').select('*').eq('is_active',true).single()
+  activeRound=round||null
+  document.getElementById('loadingMask').style.display='none'
+  if(!userName){document.getElementById('nameModal').classList.remove('hidden');setTimeout(()=>document.getElementById('nameInput').focus(),100);return}
+  await checkRoomStatus()
+}
+
+async function checkRoomStatus(){
+  let q=db.from('study_room_members').select('*').eq('name',userName)
+  if(activeRound)q=q.eq('round_id',activeRound.id)
+  const{data:membership}=await q.maybeSingle()
+  myMembership=membership
+  if(myMembership)await showRoom();else await showWelcome()
+}
+
+async function showWelcome(){
+  document.getElementById('welcomeScreen').classList.remove('hidden')
+  document.getElementById('welcomeScreen').style.display='flex'
+  document.getElementById('roomScreen').classList.add('hidden')
+  let q=db.from('study_room_members').select('name',{count:'exact',head:true})
+  if(activeRound)q=q.eq('round_id',activeRound.id)
+  const{count}=await q
+  document.getElementById('welcomeMemberCount').innerHTML=`📚 目前 <strong style="color:var(--primary)">${count||0}</strong> 位成员在自习室`
+}
+
+function showEnterModal(){document.getElementById('enterModal').classList.remove('hidden')}
+
+document.getElementById('enterRoomBtn').onclick=async()=>{
+  const btn=document.getElementById('enterRoomBtn')
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span> 进入中…'
+  const showProgress=document.getElementById('showProgressToggle').checked
+  const payload={name:userName,round_id:activeRound?activeRound.id:null,show_progress:showProgress}
+  await db.from('study_room_members').upsert(payload,{onConflict:'name,round_id'})
+  document.getElementById('enterModal').classList.add('hidden')
+  myMembership={...payload};btn.disabled=false;btn.textContent='进入自习室 →'
+  await showRoom()
+}
+
+async function showRoom(){
+  document.getElementById('welcomeScreen').style.display='none'
+  document.getElementById('roomScreen').classList.remove('hidden')
+  document.getElementById('headerName').textContent=userName
+  await loadRoom()
+}
+
+async function loadRoom(){
+  let mq=db.from('study_room_members').select('*').order('joined_at',{ascending:true})
+  if(activeRound)mq=mq.eq('round_id',activeRound.id)
+  const{data:members}=await mq
+  roomMembers=members||[]
+
+  const names=roomMembers.map(m=>m.name)
+  if(names.length){
+    // only public todos (private=false or null)
+    let tq=db.from('todos').select('*').in('name',names).neq('private',true).order('created_at',{ascending:true})
+    if(activeRound)tq=tq.eq('round_id',activeRound.id)
+    const{data:todos}=await tq
+    allTodos=todos||[]
+
+    // public goals
+    let gq=db.from('goals').select('*').in('name',names).eq('public_in_room',true).order('created_at',{ascending:true})
+    if(activeRound)gq=gq.eq('round_id',activeRound.id)
+    const{data:goals}=await gq
+    allGoals=goals||[]
+  } else {allTodos=[];allGoals=[]}
+
+  const progressNames=roomMembers.filter(m=>m.show_progress).map(m=>m.name)
+  checkinStats={}
+  if(progressNames.length){
+    let sq=db.from('checkins').select('name').eq('deleted',false).in('name',progressNames)
+    if(activeRound)sq=sq.eq('round_id',activeRound.id)
+    const{data:checkins}=await sq
+    ;(checkins||[]).forEach(c=>{checkinStats[c.name]=(checkinStats[c.name]||0)+1})
+  }
+
+  const totalDays=activeRound?parseInt(activeRound.total_days):30
+  document.getElementById('memberCountBadge').textContent=`${roomMembers.length} 人在室`
+  document.getElementById('onlineText').textContent=`${roomMembers.length} 位成员在自习室`
+  document.getElementById('avatarRow').innerHTML=roomMembers.map(m=>`<div class="mini-avatar" title="${m.name}">${m.name.charAt(0)}</div>`).join('')
+  renderCalendar()
+  renderMembers(totalDays)
+}
+
+/* --- Calendar --- */
+function shiftCal(dir){
+  calViewMonth+=dir
+  if(calViewMonth<0){calViewMonth=11;calViewYear--}
+  if(calViewMonth>11){calViewMonth=0;calViewYear++}
+  renderCalendar();renderYMPicker()
+}
+
+let ymPickerYear=calViewYear
+function toggleYMPicker(){
+  const p=document.getElementById('ymPopup')
+  if(p.classList.contains('hidden')){
+    ymPickerYear=calViewYear;renderYMPicker();p.classList.remove('hidden')
+    setTimeout(()=>document.addEventListener('click',closeYMOnOutside),0)
+  }else{p.classList.add('hidden');document.removeEventListener('click',closeYMOnOutside)}
+}
+function closeYMOnOutside(e){
+  const p=document.getElementById('ymPopup')
+  if(!p.contains(e.target)&&e.target.id!=='calMonth'){p.classList.add('hidden');document.removeEventListener('click',closeYMOnOutside)}
+}
+function renderYMPicker(){
+  const months=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']
+  document.getElementById('ymPopup').innerHTML=`
+    <div class="ym-year-row">
+      <button class="ym-year-btn" onclick="ymShiftYear(-1);event.stopPropagation()">‹</button>
+      <span class="ym-year-val">${ymPickerYear}</span>
+      <button class="ym-year-btn" onclick="ymShiftYear(1);event.stopPropagation()">›</button>
+    </div>
+    <div class="ym-months">
+      ${months.map((m,i)=>`<div class="ym-m ${ymPickerYear===calViewYear&&i===calViewMonth?'active':''}" onclick="pickYM(${ymPickerYear},${i});event.stopPropagation()">${m}</div>`).join('')}
+    </div>`
+}
+function ymShiftYear(dir){ymPickerYear+=dir;renderYMPicker()}
+function pickYM(year,month){
+  calViewYear=year;calViewMonth=month
+  document.getElementById('ymPopup').classList.add('hidden')
+  document.removeEventListener('click',closeYMOnOutside)
+  renderCalendar()
+}
+
+function renderCalendar(){
+  const year=calViewYear,month=calViewMonth
+  const now=new Date(),todayFull=todayStr()
+  document.getElementById('calMonth').textContent=`${year}年${month+1}月`
+  const firstDay=new Date(year,month,1).getDay()
+  const daysInMonth=new Date(year,month+1,0).getDate()
+  const offset=(firstDay+6)%7
+  const myDates=new Set(allTodos.filter(t=>t.name===userName&&!t.done&&t.due_date).map(t=>t.due_date))
+
+  const grid=document.getElementById('calGrid')
+  const headers=Array.from(grid.querySelectorAll('.cal-dh'))
+  grid.innerHTML=''; headers.forEach(h=>grid.appendChild(h))
+  for(let i=0;i<offset;i++){const el=document.createElement('div');el.className='cal-day empty';grid.appendChild(el)}
+  for(let d=1;d<=daysInMonth;d++){
+    const ds=`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+    const isToday=ds===todayFull
+    const isSelected=currentFilter===ds||(currentFilter==='today'&&isToday)
+    const hasDot=myDates.has(ds)
+    const el=document.createElement('div')
+    el.className='cal-day'+(isToday?' today':'')+(isSelected?' selected':'')
+    el.innerHTML=`<span>${d}</span>${hasDot?'<div class="cal-dot"></div>':''}`
+    el.onclick=()=>setFilter(ds)
+    grid.appendChild(el)
+  }
+}
+
+/* --- Filter --- */
+function setFilter(f){
+  currentFilter=f
+  // 点击日历具体日期时，自动将添加待办的截止日期设为该日期
+  if(f!=='today'&&f!=='week'&&f!=='month'&&f!=='all'){
+    addDueDate=f
+    const inp=document.getElementById('customDateInput')
+    if(inp)inp.style.display='none'
+  }
+  document.querySelectorAll('.filter-tab').forEach(t=>t.classList.remove('active'))
+  if(f==='today')document.getElementById('ft-today')?.classList.add('active')
+  else if(f==='week')document.getElementById('ft-week')?.classList.add('active')
+  else if(f==='month')document.getElementById('ft-month')?.classList.add('active')
+  else if(f==='all')document.getElementById('ft-all')?.classList.add('active')
+  renderCalendar()
+  renderMembers(activeRound?parseInt(activeRound.total_days):30)
+}
+
+function setAddDue(k){
+  addDueDate=k
+  const inp=document.getElementById('customDateInput')
+  if(inp)inp.style.display='none'
+  renderMembers(activeRound?parseInt(activeRound.total_days):30)
+  setTimeout(()=>document.getElementById('todoInput')?.focus(),30)
+}
+function openCustomDate(){
+  const inp=document.getElementById('customDateInput')
+  if(!inp)return
+  inp.style.display=inp.style.display==='none'?'block':'none'
+  if(inp.style.display==='block'){
+    inp.value=addDueDate!=='today'&&addDueDate!=='week'&&addDueDate!=='month'?addDueDate:todayStr()
+    try{inp.showPicker()}catch(e){inp.focus()}
+  }
+}
+function pickCustomDate(val){
+  if(!val)return
+  addDueDate=val
+  document.getElementById('customDateInput').style.display='none'
+  renderMembers(activeRound?parseInt(activeRound.total_days):30)
+  setTimeout(()=>document.getElementById('todoInput')?.focus(),30)
+}
+
+/* --- Render members --- */
+function renderMembers(totalDays){
+  const sorted=[...roomMembers].sort((a,b)=>a.name===userName?-1:b.name===userName?1:0)
+  document.getElementById('memberList').innerHTML=sorted.map(m=>renderMemberCard(m,totalDays)).join('')
+}
+
+function renderMemberCard(m,totalDays){
+  const isMe=m.name===userName
+  const todos=allTodos.filter(t=>t.name===m.name)
+  const filtered=todos.filter(filterMatches)
+  const pending=filtered.filter(t=>!t.done)
+  const done=filtered.filter(t=>t.done)
+  const goals=allGoals.filter(g=>g.name===m.name)
+  const checked=checkinStats[m.name]||0
+  const pct=totalDays?Math.round(checked/totalDays*100):0
+  const mId=m.name.replace(/[^a-zA-Z0-9一-鿿]/g,'_')
+  const isDoneOpen=doneOpen[m.name]!==false
+  const filterLabel=currentFilter==='today'?'本日':currentFilter==='week'?'本周':currentFilter==='month'?'本月':currentFilter
+
+  return `
+  <div class="member-section open" id="ms-${mId}">
+    <div class="member-header ${isMe?'mine':''}" onclick="toggleMember('${esc(m.name)}')">
+      <div class="member-avatar">${m.name.charAt(0)}</div>
+      <div style="flex:1;min-width:0">
+        <div class="member-name">${escHtml(m.name)}${isMe?'<span class="mine-badge">我</span>':''}</div>
+        <div class="member-sub">${pending.length} 待完成 · ${done.length} 已完成（${filterLabel}）</div>
+      </div>
+      ${m.show_progress?`<div class="progress-mini"><div class="progress-mini-bar"><div class="progress-mini-fill" style="width:${pct}%"></div></div><span class="progress-mini-text">${checked}天</span></div>`:''}
+      <span class="chevron">›</span>
+    </div>
+    <div class="member-body">
+      ${pending.length===0&&done.length===0?`<div class="todo-empty">${isMe?`${filterLabel}还没有公开待办 👇`:`${filterLabel}暂无待办`}</div>`:pending.map(t=>renderTodoItem(t,isMe)).join('')}
+      ${isMe?`
+      <div class="add-todo-wrap">
+        <div class="add-todo-row">
+          <input class="add-todo-input" id="todoInput" placeholder="添加待办（室友可见）…" maxlength="150" onkeydown="if(event.key==='Enter')addTodo()">
+          <button class="add-todo-submit" onclick="addTodo()">添加</button>
+        </div>
+        <div class="date-chips">
+          <div class="date-chip ${addDueDate==='today'?'active':''}" onclick="setAddDue('today')">本日</div>
+          <div class="date-chip ${addDueDate==='week'?'active':''}"  onclick="setAddDue('week')">本周</div>
+          <div class="date-chip ${addDueDate==='month'?'active':''}" onclick="setAddDue('month')">本月</div>
+          <div class="date-chip ${addDueDate!=='today'&&addDueDate!=='week'&&addDueDate!=='month'?'active':''}" onclick="openCustomDate()">📅 选日期</div>
+        </div>
+        <input type="date" id="customDateInput" style="display:none;margin-top:8px;padding:6px 10px;border:1.5px solid var(--primary);border-radius:10px;font-size:13px;font-family:inherit;color:var(--text);outline:none;" onchange="pickCustomDate(this.value)">
+      </div>`:''}
+      ${done.length>0?`
+      <div class="done-toggle" onclick="toggleDone('${esc(m.name)}')">
+        <span class="done-chevron ${isDoneOpen?'open':''}">›</span>
+        ✅ 已完成 (${done.length})
+      </div>
+      <div id="done-${mId}" style="${isDoneOpen?'':'display:none'}">${done.map(t=>renderTodoItem(t,isMe)).join('')}</div>`:''}
+      ${goals.length>0?`
+      <div class="goals-section">
+        <div class="goals-label">🎯 长期进度</div>
+        ${goals.map(g=>{
+          const dl=g.deadline?daysLeft(g.deadline):null
+          const dlCls=dl===null?'':dl<0?'days-late':dl<=7?'days-warn':'days-ok'
+          const dlTxt=dl===null?'':dl<0?`已超期 ${-dl} 天`:dl===0?'今天截止':`还剩 ${dl} 天`
+          return `<div class="goal-row">
+            <div style="font-size:16px;flex-shrink:0;margin-top:2px">🎯</div>
+            <div class="goal-content">
+              <div class="goal-title">${escHtml(g.title)}</div>
+              ${g.note?`<div class="goal-note-sm">${escHtml(g.note)}</div>`:''}
+              <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:3px">
+                ${g.start_date?`<span style="font-size:11px;color:var(--text-muted)">开始 ${g.start_date}</span>`:''}
+                ${g.start_date&&g.deadline?`<span style="font-size:11px;color:#ccc">→</span>`:''}
+                ${g.deadline?`<span style="font-size:11px;color:var(--text-muted)">截止 ${g.deadline}</span>`:''}
+                ${dl!==null?`<span class="days-left ${dlCls}">⏳ ${dlTxt}</span>`:''}
+              </div>
+            </div>
+          </div>`
+        }).join('')}
+      </div>`:''}
+    </div>
+  </div>`
+}
+
+function renderTodoItem(t,isMe){
+  const lbl=t.due_date?dueDateLabel(t.due_date):null
+  return `<div class="todo-item" id="todo-${t.id}">
+    <div class="todo-check ${t.done?'checked':''} ${!isMe?'readonly':''}" id="chk-${t.id}" ${isMe?`onclick="toggleTodo(${t.id})"`:''}>
+    </div>
+    <div class="todo-main">
+      <div class="todo-text ${t.done?'done':''}" id="txt-${t.id}" ${isMe?`ondblclick="startEdit(${t.id})"`:''}>
+        ${escHtml(t.content)}
+      </div>
+      ${lbl?`<div class="todo-meta"><span class="due-tag ${lbl.cls}">${lbl.text}</span></div>`:''}
+    </div>
+    ${isMe?`<div class="todo-actions" id="act-${t.id}">
+      <button class="todo-action-btn" onclick="startEdit(${t.id})">✏️</button>
+      <button class="todo-action-btn todo-action-del" onclick="deleteTodo(${t.id})">×</button>
+    </div>`:''}
+  </div>`
+}
+
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function esc(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}
+function toggleMember(name){const mId=name.replace(/[^a-zA-Z0-9一-鿿]/g,'_');document.getElementById(`ms-${mId}`)?.classList.toggle('open')}
+function toggleDone(name){
+  const mId=name.replace(/[^a-zA-Z0-9一-鿿]/g,'_')
+  const el=document.getElementById(`done-${mId}`)
+  const btn=el?.previousElementSibling?.querySelector('.done-chevron')
+  if(!el)return
+  const show=el.style.display==='none'
+  el.style.display=show?'':'none'
+  if(btn)btn.classList.toggle('open',show)
+  doneOpen[name]=show
+}
+
+async function toggleTodo(id){
+  const todo=allTodos.find(t=>t.id===id);if(!todo)return
+  const newDone=!todo.done
+  const chk=document.getElementById(`chk-${id}`)
+  if(newDone&&chk){chk.classList.add('anim-complete');await new Promise(r=>setTimeout(r,460))}
+  await db.from('todos').update({done:newDone}).eq('id',id)
+  todo.done=newDone;renderCalendar();renderMembers(activeRound?parseInt(activeRound.total_days):30)
+}
+
+async function addTodo(){
+  const input=document.getElementById('todoInput')
+  const content=input?.value.trim();if(!content)return
+  input.value=''
+  const dueVal=getDueDate(addDueDate)
+  const{data}=await db.from('todos').insert({name:userName,content,done:false,private:false,round_id:activeRound?activeRound.id:null,due_date:dueVal}).select().single()
+  if(data){allTodos.push(data);renderCalendar();renderMembers(activeRound?parseInt(activeRound.total_days):30)}
+  setTimeout(()=>document.getElementById('todoInput')?.focus(),30)
+}
+
+function startEdit(id){
+  const todo=allTodos.find(t=>t.id===id);if(!todo)return
+  const txtEl=document.getElementById(`txt-${id}`),actEl=document.getElementById(`act-${id}`)
+  if(!txtEl)return
+  const input=document.createElement('input');input.className='todo-edit-input';input.value=todo.content
+  input.onblur=()=>saveEdit(id,input.value)
+  input.onkeydown=e=>{if(e.key==='Enter')input.blur();if(e.key==='Escape')renderMembers(activeRound?parseInt(activeRound.total_days):30)}
+  txtEl.replaceWith(input);if(actEl)actEl.style.opacity='0'
+  input.focus();input.select()
+}
+
+async function saveEdit(id,newContent){
+  const content=newContent.trim(),todo=allTodos.find(t=>t.id===id);if(!todo)return
+  if(content&&content!==todo.content){await db.from('todos').update({content}).eq('id',id);todo.content=content}
+  renderMembers(activeRound?parseInt(activeRound.total_days):30)
+}
+
+async function deleteTodo(id){
+  const el=document.getElementById(`todo-${id}`)
+  if(el){el.style.opacity='0';el.style.transition='opacity .18s'}
+  await new Promise(r=>setTimeout(r,180))
+  await db.from('todos').delete().eq('id',id)
+  allTodos=allTodos.filter(t=>t.id!==id);renderCalendar();renderMembers(activeRound?parseInt(activeRound.total_days):30)
+}
+
+async function exitRoom(){
+  if(!confirm('确定离开自习室吗？\n离开后你的清单对其他成员不可见。'))return
+  let q=db.from('study_room_members').delete().eq('name',userName)
+  if(activeRound)q=q.eq('round_id',activeRound.id)
+  await q;myMembership=null;await showWelcome()
+}
+
+document.getElementById('saveNameBtn').onclick=async()=>{
+  const val=document.getElementById('nameInput').value.trim();if(!val)return
+  userName=val;localStorage.setItem('checkin_name',userName)
+  document.getElementById('nameModal').classList.add('hidden');await checkRoomStatus()
+}
+document.getElementById('nameInput').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('saveNameBtn').click()})
+
+function daysLeft(deadline){ if(!deadline)return null; return Math.ceil((new Date(deadline)-new Date(todayStr()))/(1000*86400)) }
+
+init()
+</script>
+</body>
+</html>

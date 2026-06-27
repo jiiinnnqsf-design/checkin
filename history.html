@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>历史记录</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --primary: #7c6fcd; --primary-light: #eeeaff; --primary-mid: #b8b0ee;
+    --success: #5aaa7e; --success-light: #e8f7ef;
+    --warning: #d9965a; --warning-light: #fdf3e8;
+    --danger: #d97a7a;
+    --text: #3a3a4a; --text-muted: #8a8ea8;
+    --border: #e6e8f2; --bg: #f5f5fb; --card: #fff;
+    --radius: 16px; --shadow: 0 2px 14px rgba(80,70,150,0.07);
+  }
+  body { font-family: -apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 60px; }
+  .loading-mask { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 999; flex-direction: column; gap: 12px; }
+  .loading-dot { font-size: 32px; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.15)} }
+
+  header { background: var(--card); border-bottom: 1px solid var(--border); height: 58px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 6px rgba(80,70,140,0.06); }
+  .page-title { font-size: 16px; font-weight: 800; color: var(--primary); }
+  .user-chip { display: flex; align-items: center; gap: 5px; background: var(--primary-light); color: var(--primary); padding: 5px 11px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+  .back-link { color: var(--text-muted); font-size: 20px; text-decoration: none; }
+  .back-link:hover { color: var(--primary); }
+
+  /* Round tabs */
+  .round-tabs { display: flex; gap: 8px; padding: 14px 16px; overflow-x: auto; scrollbar-width: none; background: var(--card); border-bottom: 1px solid var(--border); }
+  .round-tabs::-webkit-scrollbar { display: none; }
+  .round-tab { flex-shrink: 0; padding: 7px 16px; border-radius: 20px; border: 1.5px solid var(--border); font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; white-space: nowrap; background: var(--bg); transition: all .15s; }
+  .round-tab.active { background: var(--primary); border-color: var(--primary); color: white; }
+  .round-tab.ended { border-color: #d0cce8; color: #9990c8; }
+  .round-tab:hover:not(.active) { border-color: var(--primary-mid); color: var(--primary); }
+
+  .container { max-width: 680px; margin: 0 auto; padding: 18px 16px; }
+  .card { background: var(--card); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 14px; box-shadow: var(--shadow); border: 1px solid var(--border); }
+  .card-title { font-size: 14px; font-weight: 800; color: var(--text); margin-bottom: 14px; }
+
+  /* Round info */
+  .round-info-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+  .info-item { background: var(--bg); border-radius: 10px; padding: 10px 12px; text-align: center; }
+  .info-num { font-size: 20px; font-weight: 800; color: var(--primary); }
+  .info-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .round-status { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; margin-bottom: 12px; }
+  .status-ended { background: var(--bg); color: var(--text-muted); }
+  .status-active { background: var(--success-light); color: var(--success); }
+
+  /* Check-in grid */
+  .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(54px, 1fr)); gap: 8px; }
+  .history-item { border-radius: 10px; overflow: hidden; position: relative; background: var(--bg); border: 1.5px solid var(--border); aspect-ratio: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 3px; }
+  .history-item.done { border-color: var(--success); background: var(--success-light); }
+  .history-item.missed { opacity: .5; }
+  .history-item img { width: 100%; height: 100%; object-fit: cover; position: absolute; inset: 0; cursor: pointer; }
+  .history-day { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+  .history-item.done .history-day { color: var(--success); }
+  .history-note { position: absolute; bottom: 2px; right: 3px; font-size: 9px; color: white; background: rgba(0,0,0,0.4); border-radius: 3px; padding: 1px 3px; }
+
+  /* Lightbox */
+  .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.92); display: flex; align-items: center; justify-content: center; z-index: 200; cursor: pointer; }
+  .lightbox img { max-width: 94vw; max-height: 90vh; border-radius: 10px; object-fit: contain; }
+
+  /* Plan */
+  .plan-field { margin-bottom: 12px; }
+  .plan-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+  .plan-value { font-size: 14px; line-height: 1.7; color: var(--text); white-space: pre-wrap; }
+  .plan-image { margin-top: 8px; border-radius: 10px; overflow: hidden; }
+  .plan-image img { width: 100%; max-height: 220px; object-fit: cover; cursor: pointer; }
+
+  /* Reflection */
+  .reflection-text { font-size: 14px; line-height: 1.9; color: var(--text); white-space: pre-wrap; background: var(--bg); border-radius: 10px; padding: 14px 16px; }
+  .reflection-empty { font-size: 13px; color: var(--text-muted); padding: 4px 0 10px; }
+  textarea.refl-input { width: 100%; padding: 12px 14px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 14px; font-family: inherit; resize: none; height: 140px; outline: none; line-height: 1.8; transition: border-color .2s; color: var(--text); }
+  textarea.refl-input:focus { border-color: var(--primary); }
+  .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+  .btn-save { padding: 8px 18px; background: var(--primary); color: white; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .btn-save:hover { background: #6a5ec0; }
+  .btn-cancel { padding: 8px 16px; background: transparent; border: 1.5px solid var(--border); color: var(--text-muted); border-radius: 9px; font-size: 13px; cursor: pointer; }
+  .btn-edit { padding: 7px 14px; background: transparent; border: 1.5px solid var(--border); color: var(--text-muted); border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn-edit:hover { border-color: var(--primary); color: var(--primary); }
+
+  .empty-state { text-align: center; color: var(--text-muted); font-size: 14px; padding: 32px 0; }
+  .hidden { display: none !important; }
+  footer { text-align: center; padding: 20px; font-size: 12px; color: #c4c8da; }
+</style>
+</head>
+<body>
+
+<div class="loading-mask" id="loadingMask">
+  <div class="loading-dot">📖</div>
+  <div style="color:var(--text-muted);font-size:14px">加载中…</div>
+</div>
+
+<header>
+  <div style="display:flex;align-items:center;gap:10px">
+    <a href="/" class="back-link">←</a>
+    <span class="page-title">历史记录</span>
+  </div>
+  <div class="user-chip">👤 <span id="headerName">--</span></div>
+</header>
+
+<div id="roundTabs" class="round-tabs"></div>
+
+<div class="container" id="mainContent">
+  <div class="empty-state" id="noRounds" style="display:none">暂无历史打卡记录</div>
+</div>
+
+<div class="lightbox hidden" id="lightbox" onclick="this.classList.add('hidden')">
+  <img id="lightboxImg" src="" alt="">
+</div>
+
+<footer>语擦女读书会 &nbsp;·&nbsp; <a href="/" style="color:#c4c8da;text-decoration:none">返回打卡</a></footer>
+
+<script>
+const SUPABASE_URL = 'https://nepjhfhbxgxlqsbhvwsa.supabase.co'
+const SUPABASE_ANON_KEY = 'sb_publishable_j18YmVc3EyArtsnNe_Oqbw_w4H90A_1'
+const { createClient } = supabase
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+let userName = localStorage.getItem('checkin_name') || ''
+let allRounds = []
+let selectedRound = null
+let userCheckins = []
+let userPlan = null
+let userReflection = null
+let editingReflection = false
+
+async function init() {
+  if (!userName) {
+    userName = prompt('请输入你的名字：')?.trim() || ''
+    if (!userName) { location.href = '/'; return }
+    localStorage.setItem('checkin_name', userName)
+  }
+  document.getElementById('headerName').textContent = userName
+
+  // Load all rounds sorted by created_at desc
+  const { data: rounds } = await db.from('rounds').select('*').order('created_at', { ascending: false })
+  allRounds = rounds || []
+
+  document.getElementById('loadingMask').style.display = 'none'
+
+  if (!allRounds.length) { document.getElementById('noRounds').style.display = 'block'; return }
+
+  renderRoundTabs()
+  // Default: first round in list (most recent), prefer ended ones
+  const defaultRound = allRounds.find(r => !r.is_active) || allRounds[0]
+  await selectRound(defaultRound)
+}
+
+function renderRoundTabs() {
+  const today = new Date().toISOString().slice(0, 10)
+  document.getElementById('roundTabs').innerHTML = allRounds.map(r => {
+    const startDate = new Date(r.start_date)
+    const endDate = new Date(startDate)
+    endDate.setDate(endDate.getDate() + parseInt(r.total_days))
+    const isEnded = new Date() >= endDate
+    return `<div class="round-tab ${isEnded ? 'ended' : ''}" id="tab-${r.id}" onclick="selectRound(${JSON.stringify(r).replace(/"/g,'&quot;')})">${r.name}</div>`
+  }).join('')
+}
+
+async function selectRound(round) {
+  if (typeof round === 'string') round = JSON.parse(round)
+  selectedRound = round
+  editingReflection = false
+
+  // Highlight tab
+  document.querySelectorAll('.round-tab').forEach(t => t.classList.remove('active'))
+  document.getElementById(`tab-${round.id}`)?.classList.add('active')
+
+  // Load user data for this round
+  const [checkinsRes, planRes, reflectionRes] = await Promise.all([
+    db.from('checkins').select('*').eq('name', userName).eq('round_id', round.id).eq('deleted', false).order('date', { ascending: true }),
+    db.from('plans').select('*').eq('name', userName).eq('round_id', round.id).eq('deleted', false).maybeSingle(),
+    db.from('reflections').select('*').eq('name', userName).eq('round_id', round.id).maybeSingle()
+  ])
+
+  userCheckins = checkinsRes.data || []
+  userPlan = planRes.data || null
+  userReflection = reflectionRes.data || null
+
+  renderContent()
+}
+
+function renderContent() {
+  const r = selectedRound
+  const startDate = new Date(r.start_date)
+  const totalDays = parseInt(r.total_days)
+  const endDate = new Date(startDate); endDate.setDate(endDate.getDate() + totalDays)
+  const isEnded = new Date() >= endDate
+  const checkedCount = userCheckins.length
+  const pct = Math.round(checkedCount / totalDays * 100)
+
+  // Determine dates
+  const endDateStr = new Date(endDate.getTime() - 86400000).toISOString().slice(0, 10)
+
+  let html = `
+  <!-- Round info -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-size:16px;font-weight:800">${escHtml(r.name)}</div>
+      <span class="round-status ${isEnded ? 'status-ended' : 'status-active'}">${isEnded ? '已结束' : '进行中'}</span>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">
+      ${r.start_date} — ${endDateStr} · 共 ${totalDays} 天
+    </div>
+    <div class="round-info-grid">
+      <div class="info-item">
+        <div class="info-num">${checkedCount}</div>
+        <div class="info-label">打卡天数</div>
+      </div>
+      <div class="info-item">
+        <div class="info-num">${totalDays - checkedCount}</div>
+        <div class="info-label">未打卡</div>
+      </div>
+      <div class="info-item">
+        <div class="info-num">${pct}%</div>
+        <div class="info-label">完成率</div>
+      </div>
+    </div>
+    <div style="margin-top:12px;height:7px;background:var(--border);border-radius:4px;overflow:hidden">
+      <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--primary),var(--primary-mid));border-radius:4px;transition:width .5s"></div>
+    </div>
+  </div>
+
+  <!-- Check-in grid -->
+  <div class="card">
+    <div class="card-title">打卡记录</div>
+    <div class="history-grid">${renderCheckinGrid(r, userCheckins)}</div>
+  </div>`
+
+  // Plan
+  if (userPlan) {
+    html += `
+  <div class="card">
+    <div class="card-title">📋 当时的计划</div>
+    ${userPlan.overview ? `<div class="plan-field"><div class="plan-label">计划概述</div><div class="plan-value">${escHtml(userPlan.overview)}</div></div>` : ''}
+    ${userPlan.goal ? `<div class="plan-field"><div class="plan-label">希望收获</div><div class="plan-value">${escHtml(userPlan.goal)}</div></div>` : ''}
+    ${userPlan.daily_time ? `<div class="plan-field"><div class="plan-label">每日时间安排</div><div class="plan-value">${escHtml(userPlan.daily_time)}</div></div>` : ''}
+    ${userPlan.challenge ? `<div class="plan-field"><div class="plan-label">应对困难</div><div class="plan-value">${escHtml(userPlan.challenge)}</div></div>` : ''}
+    ${userPlan.image_url ? `<div class="plan-image"><img src="${userPlan.image_url}" onclick="openLightbox('${userPlan.image_url}')" alt="计划图"></div>` : ''}
+  </div>`
+  }
+
+  // Check-in notes preview (up to 3 most recent with notes)
+  const withNotes = userCheckins.filter(c => c.note).slice(-5).reverse()
+  if (withNotes.length) {
+    html += `
+  <div class="card">
+    <div class="card-title">📝 打卡心得摘要</div>
+    ${withNotes.map(c => `
+      <div style="padding:10px 0;border-bottom:1px solid #f0f1f8">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">${c.date}</div>
+        <div style="font-size:13px;line-height:1.7;color:var(--text)">${escHtml(c.note)}</div>
+      </div>`).join('')}
+  </div>`
+  }
+
+  // Reflection
+  html += `
+  <div class="card" id="reflectionCard">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div class="card-title" style="margin-bottom:0">💭 本轮心得总结</div>
+      ${userReflection && !editingReflection ? `<button class="btn-edit" onclick="startEditReflection()">✏️ 修改</button>` : ''}
+    </div>
+    ${renderReflectionSection()}
+  </div>`
+
+  document.getElementById('mainContent').innerHTML = html
+}
+
+function renderCheckinGrid(round, checkins) {
+  const startDate = new Date(round.start_date)
+  const totalDays = parseInt(round.total_days)
+  const checkinMap = {}
+  checkins.forEach(c => { checkinMap[c.date] = c })
+  let html = ''
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(startDate); d.setDate(d.getDate() + i)
+    const dateStr = d.toISOString().slice(0, 10)
+    const c = checkinMap[dateStr]
+    const dayNum = i + 1
+    if (c) {
+      html += `<div class="history-item done">
+        ${c.image_url ? `<img src="${c.image_url}" onclick="openLightbox('${c.image_url}')" title="${dateStr}">` : ''}
+        <span class="history-day">${dayNum}</span>
+        ${c.note ? `<span class="history-note">💬</span>` : ''}
+      </div>`
+    } else {
+      const today = new Date().toISOString().slice(0, 10)
+      const isFuture = dateStr > today
+      html += `<div class="history-item ${isFuture ? '' : 'missed'}">
+        <span class="history-day">${dayNum}</span>
+      </div>`
+    }
+  }
+  return html
+}
+
+function renderReflectionSection() {
+  if (editingReflection) {
+    return `
+      <textarea class="refl-input" id="reflInput" placeholder="写下这轮的感悟、收获或遗憾…" maxlength="2000">${userReflection ? escHtml(userReflection.content) : ''}</textarea>
+      <div class="btn-row">
+        <button class="btn-save" onclick="saveReflection()">保存</button>
+        <button class="btn-cancel" onclick="cancelEditReflection()">取消</button>
+      </div>`
+  }
+  if (userReflection) {
+    return `<div class="reflection-text">${escHtml(userReflection.content)}</div>`
+  }
+  return `
+    <div class="reflection-empty">还没有写心得，记录一下这轮的感悟吧 ✨</div>
+    <button class="btn-save" onclick="startEditReflection()">✍️ 写心得</button>`
+}
+
+function startEditReflection() {
+  editingReflection = true
+  const card = document.getElementById('reflectionCard')
+  if (card) {
+    const titleRow = card.querySelector('div:first-child')
+    if (titleRow) titleRow.innerHTML = `<div class="card-title" style="margin-bottom:0">💭 本轮心得总结</div>`
+    const sectionEl = card.querySelector('.reflection-text, .reflection-empty, textarea, .btn-row, button.btn-save')
+    // Re-render just the reflection part
+    const inner = card.innerHTML
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin-bottom:0">💭 本轮心得总结</div>
+      </div>
+      <textarea class="refl-input" id="reflInput" placeholder="写下这轮的感悟、收获或遗憾…" maxlength="2000">${userReflection ? escHtml(userReflection.content) : ''}</textarea>
+      <div class="btn-row">
+        <button class="btn-save" onclick="saveReflection()">保存</button>
+        <button class="btn-cancel" onclick="cancelEditReflection()">取消</button>
+      </div>`
+    document.getElementById('reflInput')?.focus()
+  }
+}
+
+function cancelEditReflection() {
+  editingReflection = false
+  renderContent()
+}
+
+async function saveReflection() {
+  const input = document.getElementById('reflInput')
+  const content = input?.value.trim()
+  if (!content) { alert('请填写心得内容'); return }
+  const payload = {
+    name: userName, round_id: selectedRound.id,
+    content, updated_at: new Date().toISOString()
+  }
+  await db.from('reflections').upsert(payload, { onConflict: 'name,round_id' })
+  userReflection = { ...payload }
+  editingReflection = false
+  renderContent()
+}
+
+function openLightbox(url) {
+  document.getElementById('lightboxImg').src = url
+  document.getElementById('lightbox').classList.remove('hidden')
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+}
+
+init()
+</script>
+</body>
+</html>

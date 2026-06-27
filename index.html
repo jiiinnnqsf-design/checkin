@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>每日打卡</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --primary: #6c63ff;
+    --primary-light: #ede9ff;
+    --success: #48bb78;
+    --success-light: #e6f9ef;
+    --warning: #f6ad55;
+    --warning-light: #fff8ee;
+    --text: #2d3748;
+    --text-muted: #718096;
+    --border: #e2e8f0;
+    --bg: #f7f8fc;
+    --card: #ffffff;
+    --radius: 16px;
+    --shadow: 0 2px 16px rgba(0,0,0,0.07);
+    --shadow-lg: 0 8px 32px rgba(108,99,255,0.15);
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; padding-bottom: 40px;
+  }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.45); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; padding: 20px;
+  }
+  .modal {
+    background: var(--card); border-radius: var(--radius);
+    padding: 40px 32px; width: 100%; max-width: 360px;
+    box-shadow: var(--shadow-lg); animation: slideUp .3s ease;
+  }
+  .modal-icon { font-size: 48px; text-align: center; margin-bottom: 16px; }
+  .modal h2 { font-size: 22px; font-weight: 700; text-align: center; margin-bottom: 8px; }
+  .modal p { color: var(--text-muted); text-align: center; margin-bottom: 28px; font-size: 14px; }
+
+  header {
+    background: var(--card); border-bottom: 1px solid var(--border);
+    padding: 0 20px; height: 60px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 10;
+  }
+  .app-name { font-size: 18px; font-weight: 700; color: var(--primary); }
+  .user-chip {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--primary-light); color: var(--primary);
+    padding: 6px 14px; border-radius: 20px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .user-chip:hover { opacity: .85; }
+
+  .container { max-width: 500px; margin: 0 auto; padding: 24px 16px; }
+
+  .card {
+    background: var(--card); border-radius: var(--radius);
+    padding: 24px; margin-bottom: 16px; box-shadow: var(--shadow);
+  }
+  .card-title {
+    font-size: 13px; font-weight: 600; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: .5px; margin-bottom: 16px;
+  }
+
+  .stats-row { display: flex; gap: 12px; }
+  .stat-item {
+    flex: 1; background: var(--bg); border-radius: 12px;
+    padding: 16px; text-align: center;
+  }
+  .stat-num { font-size: 28px; font-weight: 800; line-height: 1; margin-bottom: 6px; }
+  .stat-label { font-size: 12px; color: var(--text-muted); }
+  .stat-item.primary .stat-num { color: var(--primary); }
+  .stat-item.success .stat-num { color: var(--success); }
+  .stat-item.warning .stat-num { color: var(--warning); }
+
+  .progress-wrap { margin-top: 20px; }
+  .progress-header { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+  .progress-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .progress-fill {
+    height: 100%; background: linear-gradient(90deg, var(--primary), #a78bfa);
+    border-radius: 4px; transition: width .8s cubic-bezier(.4,0,.2,1);
+  }
+
+  .today-card { text-align: center; padding: 32px 24px; }
+  .today-date { font-size: 13px; color: var(--text-muted); margin-bottom: 4px; }
+  .today-status { font-size: 16px; font-weight: 600; margin-bottom: 24px; }
+
+  .upload-area {
+    border: 2px dashed var(--border); border-radius: 12px;
+    padding: 32px 16px; text-align: center;
+    cursor: pointer; transition: all .2s; position: relative; overflow: hidden;
+  }
+  .upload-area:hover, .upload-area.drag-over { border-color: var(--primary); background: var(--primary-light); }
+  .upload-area input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .upload-icon { font-size: 36px; margin-bottom: 8px; }
+  .upload-hint { font-size: 13px; color: var(--text-muted); }
+  .preview-img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 10px; display: none; }
+
+  .btn {
+    display: block; width: 100%; padding: 14px; border: none; border-radius: 12px;
+    font-size: 16px; font-weight: 600; cursor: pointer; transition: all .2s;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    color: white; box-shadow: 0 4px 15px rgba(108,99,255,0.35);
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(108,99,255,0.4); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  .input-wrap { margin-bottom: 20px; }
+  .input-wrap label { display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
+  .input-wrap input {
+    width: 100%; padding: 13px 16px; border: 2px solid var(--border);
+    border-radius: 12px; font-size: 16px; outline: none;
+    transition: border-color .2s; font-family: inherit;
+  }
+  .input-wrap input:focus { border-color: var(--primary); }
+
+  .checked-state { display: none; }
+  .check-anim { width: 80px; height: 80px; margin: 0 auto 16px; }
+  .check-circle {
+    stroke-dasharray: 166; stroke-dashoffset: 166; stroke-width: 3;
+    stroke: var(--success); fill: none;
+    animation: strokeAnim .6s cubic-bezier(.65,0,.45,1) forwards;
+  }
+  .check-check {
+    transform-origin: 50% 50%; stroke-dasharray: 48; stroke-dashoffset: 48;
+    stroke-width: 3; stroke: var(--success); fill: none;
+    animation: strokeAnim .3s cubic-bezier(.65,0,.45,1) .45s forwards;
+  }
+  @keyframes strokeAnim { 100% { stroke-dashoffset: 0; } }
+  .congrats-title { font-size: 22px; font-weight: 800; color: var(--success); margin-bottom: 6px; }
+  .congrats-sub { font-size: 14px; color: var(--text-muted); margin-bottom: 24px; }
+
+  .done-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--success-light); color: var(--success);
+    padding: 8px 16px; border-radius: 20px;
+    font-size: 14px; font-weight: 600; margin-bottom: 20px;
+  }
+  .missed-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--warning-light); color: var(--warning);
+    padding: 8px 16px; border-radius: 20px;
+    font-size: 14px; font-weight: 600; margin-bottom: 16px;
+  }
+
+  .history-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .history-item {
+    border-radius: 12px; overflow: hidden; background: var(--bg);
+    cursor: pointer; transition: transform .15s;
+  }
+  .history-item:hover { transform: scale(1.02); }
+  .history-item img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+  .history-date { padding: 8px 10px; font-size: 12px; color: var(--text-muted); font-weight: 600; }
+
+  .lightbox {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.9);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 200; padding: 20px; cursor: pointer;
+  }
+  .lightbox img { max-width: 100%; max-height: 90vh; border-radius: 8px; }
+
+  .alert { padding: 12px 16px; border-radius: 10px; font-size: 14px; margin-bottom: 12px; display: none; }
+  .alert.error { background: #fff5f5; color: #c53030; border: 1px solid #fed7d7; }
+
+  .spinner {
+    display: inline-block; width: 18px; height: 18px;
+    border: 2px solid rgba(255,255,255,.4); border-top-color: white;
+    border-radius: 50%; animation: spin .7s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  .hidden { display: none !important; }
+
+  .confetti-container { position: fixed; inset: 0; pointer-events: none; z-index: 50; overflow: hidden; }
+  .confetti-piece {
+    position: absolute; width: 8px; height: 8px; border-radius: 2px;
+    animation: confettiFall linear forwards;
+  }
+  @keyframes confettiFall {
+    0% { transform: translateY(-10px) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+  }
+
+  .loading-mask {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 999; flex-direction: column; gap: 12px;
+  }
+  .loading-dot { font-size: 32px; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.2)} }
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div class="loading-mask" id="loadingMask">
+  <div class="loading-dot">📋</div>
+  <div style="color:var(--text-muted);font-size:14px">加载中…</div>
+</div>
+
+<!-- Name Modal -->
+<div class="modal-overlay hidden" id="nameModal">
+  <div class="modal">
+    <div class="modal-icon">👋</div>
+    <h2>欢迎来打卡</h2>
+    <p>请输入你的名字，之后无需重复填写</p>
+    <div class="input-wrap">
+      <label>你的名字</label>
+      <input type="text" id="nameInput" placeholder="输入名字…" maxlength="20" autocomplete="off">
+    </div>
+    <button class="btn btn-primary" id="saveName">开始打卡</button>
+  </div>
+</div>
+
+<header>
+  <span class="app-name" id="appNameHeader">每日打卡</span>
+  <div class="user-chip" id="userChip">
+    <span>👤</span>
+    <span id="headerName">--</span>
+  </div>
+</header>
+
+<div class="container">
+  <!-- Plan mini card -->
+  <div class="card hidden" id="planCard" style="border-left:4px solid var(--primary)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;color:var(--primary)">📋 我的计划</div>
+      <a href="/plan.html" style="font-size:12px;color:var(--primary);text-decoration:none;font-weight:600">查看完整 ›</a>
+    </div>
+    <div id="planOverviewText" style="font-size:14px;color:var(--text);line-height:1.7;white-space:pre-wrap"></div>
+    <div id="planNoSubmit" style="font-size:13px;color:var(--text-muted);display:none">
+      还没有提交计划 · <a href="/plan.html" style="color:var(--primary);text-decoration:none;font-weight:600">去填写 →</a>
+    </div>
+  </div>
+
+  <div id="roundLabel" style="display:none;margin-bottom:10px;background:var(--primary-light);color:var(--primary);padding:6px 14px;border-radius:20px;font-size:13px;font-weight:700;width:fit-content">
+  </div>
+
+  <div class="card hidden" id="statsCard">
+    <div class="card-title">我的打卡记录</div>
+    <div class="stats-row">
+      <div class="stat-item primary">
+        <div class="stat-num" id="statChecked">0</div>
+        <div class="stat-label">已打卡天数</div>
+      </div>
+      <div class="stat-item success">
+        <div class="stat-num" id="statRemain">0</div>
+        <div class="stat-label">剩余天数</div>
+      </div>
+      <div class="stat-item warning">
+        <div class="stat-num" id="statMissed">0</div>
+        <div class="stat-label">未打卡天数</div>
+      </div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-header">
+        <span>打卡进度</span>
+        <span id="progressPct">0%</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill" style="width:0%"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card today-card hidden" id="todayCard">
+    <div class="alert" id="alertBox"></div>
+    <div class="missed-badge hidden" id="missedBadge">
+      <span>⚠️</span><span id="missedText"></span>
+    </div>
+
+    <div id="checkInForm">
+      <div class="today-date" id="todayDate"></div>
+      <div class="today-status">今天还没打卡，记录美好的一天 📷</div>
+      <div class="upload-area" id="uploadArea">
+        <input type="file" id="imageInput" accept="image/*" capture="environment">
+        <div id="uploadPlaceholder">
+          <div class="upload-icon">📸</div>
+          <div style="font-weight:600;margin-bottom:4px;">点击或拖拽上传图片</div>
+          <div class="upload-hint">支持 JPG、PNG、HEIC 等格式</div>
+        </div>
+        <img class="preview-img" id="previewImg" src="" alt="">
+      </div>
+      <div style="height:16px"></div>
+      <textarea id="noteInput" placeholder="💭 写下今天的心得体会…（选填）" maxlength="300"
+        style="width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:12px;font-size:14px;font-family:inherit;resize:none;height:88px;outline:none;transition:border-color .2s;color:var(--text);"
+        onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+      <div style="height:12px"></div>
+      <button class="btn btn-primary" id="submitBtn" disabled>打卡</button>
+    </div>
+
+    <div class="checked-state" id="checkedTodayState">
+      <div class="done-badge">✅ 今天已打卡</div>
+      <div style="font-size:14px;color:var(--text-muted)">明天继续加油！</div>
+    </div>
+
+    <div class="checked-state" id="successState">
+      <svg class="check-anim" viewBox="0 0 52 52">
+        <circle class="check-circle" cx="26" cy="26" r="25"/>
+        <path class="check-check" d="M14 27 l8 8 16-16"/>
+      </svg>
+      <div class="congrats-title">打卡成功！🎉</div>
+      <div class="congrats-sub" id="congratsSub"></div>
+    </div>
+  </div>
+
+  <div class="card hidden" id="historyCard">
+    <div class="card-title">打卡历史</div>
+    <div class="history-grid" id="historyGrid"></div>
+    <div id="historyEmpty" style="text-align:center;color:var(--text-muted);font-size:14px;padding:20px 0;display:none">
+      暂无打卡记录
+    </div>
+  </div>
+
+  <!-- Reflection card -->
+  <div class="card hidden" id="reflectionCard">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div class="card-title" style="margin-bottom:0">💭 本轮总结</div>
+      <span style="font-size:12px;color:var(--text-muted)">本轮已结束</span>
+    </div>
+    <div id="reflectionView" class="hidden" style="font-size:14px;line-height:1.8;color:var(--text);white-space:pre-wrap;background:var(--bg);border-radius:10px;padding:12px 14px;margin-bottom:10px"></div>
+    <div id="reflectionEmpty" class="hidden" style="font-size:13px;color:var(--text-muted);margin-bottom:10px">还没有写心得，写下这轮的感悟吧 ✨</div>
+    <textarea id="reflectionInput" class="hidden" maxlength="2000"
+      placeholder="写下这轮的感悟、收获或遗憾…"
+      style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit;resize:none;height:130px;outline:none;line-height:1.8;transition:border-color .2s"
+      onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+    <div id="reflectionBtns" style="display:flex;gap:8px;margin-top:10px"></div>
+  </div>
+
+  <!-- Quick entry cards -->
+  <div style="display:flex;gap:8px;margin-top:4px">
+    <a href="/todos.html" style="flex:1;text-decoration:none">
+      <div style="background:#f2f8f4;border:1.5px solid #b8dfc8;border-radius:14px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;transition:transform .2s,box-shadow .2s"
+        onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(90,170,126,0.18)'"
+        onmouseout="this.style.transform='';this.style.boxShadow=''">
+        <div style="font-size:20px;line-height:1">📝</div>
+        <div style="color:#3a8060;font-size:13px;font-weight:800">我的待办</div>
+        <div style="color:#7abfa0;font-size:11px;line-height:1.4">个人清单<br>不公开</div>
+      </div>
+    </a>
+    <a href="/history.html" style="flex:1;text-decoration:none">
+      <div style="background:#fdf6ee;border:1.5px solid #f0d8b0;border-radius:14px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;transition:transform .2s,box-shadow .2s"
+        onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(200,150,80,0.18)'"
+        onmouseout="this.style.transform='';this.style.boxShadow=''">
+        <div style="font-size:20px;line-height:1">📖</div>
+        <div style="color:#8a6030;font-size:13px;font-weight:800">历史记录</div>
+        <div style="color:#c8a070;font-size:11px;line-height:1.4">往届打卡<br>心得</div>
+      </div>
+    </a>
+    <a href="/room.html" id="roomEntryCard" style="flex:1;text-decoration:none;display:none">
+      <div style="background:#f0eeff;border:1.5px solid #c8c0f0;border-radius:14px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;transition:transform .2s,box-shadow .2s"
+        onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(110,100,200,0.18)'"
+        onmouseout="this.style.transform='';this.style.boxShadow=''">
+        <div style="font-size:20px;line-height:1">📚</div>
+        <div style="color:#5a50a8;font-size:13px;font-weight:800">共享自习室</div>
+        <div style="color:#9990c8;font-size:11px;line-height:1.4" id="roomEntryCount">和大家一起<br>学习</div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<!-- Feedback Modal -->
+<div class="modal-overlay hidden" id="feedbackModal">
+  <div class="modal">
+    <div class="modal-icon">💬</div>
+    <h2>意见反馈</h2>
+    <p>有任何想法都可以告诉我们</p>
+    <div class="alert" id="feedbackAlert"></div>
+    <div class="input-wrap" style="margin-bottom:12px">
+      <label>你的名字（选填）</label>
+      <input type="text" id="feedbackName" placeholder="匿名提交也可以" maxlength="20">
+    </div>
+    <div class="input-wrap">
+      <label>反馈内容</label>
+      <textarea id="feedbackContent" placeholder="写下你的想法…" maxlength="500"
+        style="width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:12px;font-size:14px;font-family:inherit;resize:none;height:110px;outline:none;transition:border-color .2s;"
+        onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button class="btn btn-outline" style="flex:1;display:block" onclick="closeFeedback()">取消</button>
+      <button class="btn btn-primary" style="flex:2;display:block" id="feedbackSubmit" onclick="submitFeedback()">提交</button>
+    </div>
+  </div>
+</div>
+
+<footer style="text-align:center;padding:20px;font-size:12px;color:#c0c8d8">
+  语擦女读书会 &nbsp;·&nbsp; <span onclick="openFeedback()" style="cursor:pointer;text-decoration:underline;text-underline-offset:3px">意见反馈</span>
+</footer>
+
+<div class="lightbox hidden" id="lightbox" onclick="closeLightbox()">
+  <img id="lightboxImg" src="" alt="">
+</div>
+<div class="confetti-container" id="confettiContainer"></div>
+
+<script>
+// =============================================
+// 填入你的 Supabase 信息（第三步会获得）
+// =============================================
+const SUPABASE_URL = 'https://nepjhfhbxgxlqsbhvwsa.supabase.co'
+const SUPABASE_ANON_KEY = 'sb_publishable_j18YmVc3EyArtsnNe_Oqbw_w4H90A_1'
+// =============================================
+
+const { createClient } = supabase
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+let userName = localStorage.getItem('checkin_name') || ''
+let appSettings = {}
+let activeRound = null
+
+async function init() {
+  // Load settings
+  const { data: rows } = await db.from('settings').select('*')
+  if (rows) rows.forEach(r => appSettings[r.key] = r.value)
+  const appName = appSettings.appName || '每日打卡'
+  document.title = appName
+  document.getElementById('appNameHeader').textContent = appName
+
+  // Load active round
+  const { data: round } = await db.from('rounds').select('*').eq('is_active', true).single()
+  activeRound = round || null
+
+  document.getElementById('loadingMask').style.display = 'none'
+
+  if (!userName) {
+    document.getElementById('nameModal').classList.remove('hidden')
+    setTimeout(() => document.getElementById('nameInput').focus(), 100)
+  } else {
+    showApp()
+  }
+}
+
+async function showApp() {
+  document.getElementById('nameModal').classList.add('hidden')
+  document.getElementById('headerName').textContent = userName
+  document.getElementById('statsCard').classList.remove('hidden')
+  document.getElementById('todayCard').classList.remove('hidden')
+  document.getElementById('historyCard').classList.remove('hidden')
+  if (activeRound) {
+    const endDate = new Date(activeRound.start_date)
+    endDate.setDate(endDate.getDate() + parseInt(activeRound.total_days))
+    if (new Date() >= endDate) {
+      document.getElementById('reflectionCard').classList.remove('hidden')
+      loadReflection()
+    }
+  }
+
+  // Show round name if available
+  if (activeRound) {
+    const roundEl = document.getElementById('roundLabel')
+    if (roundEl) { roundEl.textContent = activeRound.name; roundEl.style.display = 'inline-flex' }
+  }
+
+  const today = new Date()
+  document.getElementById('todayDate').textContent = today.toLocaleDateString('zh-CN', {
+    year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
+  })
+
+  await loadUserData()
+}
+
+function calcStats(checkins) {
+  const totalDays = activeRound ? parseInt(activeRound.total_days) : parseInt(appSettings.totalDays || 30)
+  const startDate = activeRound ? activeRound.start_date : (appSettings.startDate || new Date().toISOString().split('T')[0])
+  const start = new Date(startDate); start.setHours(0,0,0,0)
+  const today = new Date(); today.setHours(0,0,0,0)
+  const daysPassed = Math.max(1, Math.floor((today - start) / 86400000) + 1)
+  const expectedDays = Math.min(daysPassed, totalDays)
+  const totalChecked = checkins.length
+  const missedDays = Math.max(0, expectedDays - totalChecked)
+  const remainingDays = Math.max(0, totalDays - totalChecked)
+  return { totalChecked, missedDays, remainingDays, totalDays }
+}
+
+async function loadUserData() {
+  let q = db.from('checkins').select('*').eq('name', userName).eq('deleted', false)
+  if (activeRound) q = q.eq('round_id', activeRound.id)
+  const { data: checkins } = await q.order('date', { ascending: false })
+
+  const list = checkins || []
+  const stats = calcStats(list)
+  const today = new Date().toISOString().split('T')[0]
+  const checkedToday = list.some(c => c.date === today)
+
+  document.getElementById('statChecked').textContent = stats.totalChecked
+  document.getElementById('statRemain').textContent = stats.remainingDays
+  document.getElementById('statMissed').textContent = stats.missedDays
+  const pct = Math.round(stats.totalChecked / stats.totalDays * 100)
+  document.getElementById('progressPct').textContent = pct + '%'
+  document.getElementById('progressFill').style.width = pct + '%'
+
+  if (stats.missedDays > 0) {
+    document.getElementById('missedBadge').classList.remove('hidden')
+    document.getElementById('missedText').textContent = `还有 ${stats.missedDays} 天未打卡`
+  }
+
+  if (checkedToday) {
+    document.getElementById('checkInForm').style.display = 'none'
+    document.getElementById('checkedTodayState').style.display = 'block'
+  }
+
+  renderHistory(list)
+  loadPlanCard()
+}
+
+async function loadPlanCard() {
+  document.getElementById('planCard').classList.remove('hidden')
+  const { data: plan } = await db.from('plans').select('overview').eq('name', userName).single()
+  if (plan?.overview) {
+    const text = plan.overview.length > 80 ? plan.overview.slice(0, 80) + '…' : plan.overview
+    document.getElementById('planOverviewText').textContent = text
+  } else {
+    document.getElementById('planOverviewText').style.display = 'none'
+    document.getElementById('planNoSubmit').style.display = 'block'
+  }
+}
+
+function renderHistory(checkins) {
+  const grid = document.getElementById('historyGrid')
+  const empty = document.getElementById('historyEmpty')
+  if (!checkins.length) { empty.style.display = 'block'; return }
+  grid.innerHTML = checkins.map(c => `
+    <div class="history-item" onclick="openLightbox('${c.image_url}')">
+      <img src="${c.image_url}" alt="" loading="lazy">
+      <div class="history-date">${formatDate(c.date)}</div>
+    </div>
+  `).join('')
+}
+
+function formatDate(d) {
+  return new Date(d + 'T00:00:00').toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+}
+
+// Name
+document.getElementById('saveName').onclick = async () => {
+  const val = document.getElementById('nameInput').value.trim()
+  if (!val) { document.getElementById('nameInput').focus(); return }
+  userName = val
+  localStorage.setItem('checkin_name', userName)
+  await showApp()
+}
+document.getElementById('nameInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('saveName').click()
+})
+function changeName() {
+  if (confirm(`当前名字：${userName}\n要更换名字吗？`)) {
+    localStorage.removeItem('checkin_name')
+    location.reload()
+  }
+}
+
+// Upload
+const imageInput = document.getElementById('imageInput')
+const previewImg = document.getElementById('previewImg')
+const uploadPlaceholder = document.getElementById('uploadPlaceholder')
+const submitBtn = document.getElementById('submitBtn')
+const uploadArea = document.getElementById('uploadArea')
+
+imageInput.addEventListener('change', e => {
+  const file = e.target.files[0]
+  if (!file) return
+  previewImg.src = URL.createObjectURL(file)
+  previewImg.style.display = 'block'
+  uploadPlaceholder.style.display = 'none'
+  submitBtn.disabled = false
+})
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over') })
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'))
+uploadArea.addEventListener('drop', e => {
+  e.preventDefault(); uploadArea.classList.remove('drag-over')
+  const file = e.dataTransfer.files[0]
+  if (file?.type.startsWith('image/')) {
+    const dt = new DataTransfer(); dt.items.add(file)
+    imageInput.files = dt.files; imageInput.dispatchEvent(new Event('change'))
+  }
+})
+
+// Submit
+submitBtn.addEventListener('click', async () => {
+  const file = imageInput.files[0]
+  if (!file) return
+  submitBtn.disabled = true
+  submitBtn.innerHTML = '<span class="spinner"></span>打卡中…'
+  document.getElementById('alertBox').style.display = 'none'
+
+  const today = new Date().toISOString().split('T')[0]
+
+  // Check duplicate
+  const { data: existing } = await db.from('checkins').select('id').eq('name', userName).eq('date', today)
+  if (existing?.length) {
+    showAlert('今天已经打卡过了'); submitBtn.disabled = false; submitBtn.textContent = '打卡'; return
+  }
+
+  // Upload image
+  const ext = file.name.split('.').pop()
+  const safeName = encodeURIComponent(userName).replace(/%/g, '_')
+  const path = `${safeName}/${today}-${Date.now()}.${ext}`
+  const { error: upErr } = await db.storage.from('checkin-images').upload(path, file)
+  if (upErr) { showAlert('图片上传失败：' + upErr.message); submitBtn.disabled = false; submitBtn.textContent = '打卡'; return }
+
+  const { data: { publicUrl } } = db.storage.from('checkin-images').getPublicUrl(path)
+
+  // Insert record
+  const note = document.getElementById('noteInput').value.trim()
+  const { error: insErr } = await db.from('checkins').insert({
+    name: userName, date: today, image_url: publicUrl, note: note || null,
+    round_id: activeRound ? activeRound.id : null
+  })
+  if (insErr) { showAlert('打卡失败：' + insErr.message); submitBtn.disabled = false; submitBtn.textContent = '打卡'; return }
+
+  // Show success
+  const { data: allCheckins } = await db.from('checkins').select('*').eq('name', userName)
+  const stats = calcStats(allCheckins || [])
+  document.getElementById('statChecked').textContent = stats.totalChecked
+  document.getElementById('statRemain').textContent = stats.remainingDays
+  document.getElementById('statMissed').textContent = stats.missedDays
+  const pct = Math.round(stats.totalChecked / stats.totalDays * 100)
+  document.getElementById('progressPct').textContent = pct + '%'
+  document.getElementById('progressFill').style.width = pct + '%'
+
+  document.getElementById('checkInForm').style.display = 'none'
+  document.getElementById('successState').style.display = 'block'
+  document.getElementById('congratsSub').textContent =
+    `累计已打卡 ${stats.totalChecked} 天，还剩 ${stats.remainingDays} 天，继续加油！`
+  launchConfetti()
+  setTimeout(() => loadUserData(), 1500)
+})
+
+function showAlert(msg) {
+  const el = document.getElementById('alertBox')
+  el.textContent = msg; el.className = 'alert error'; el.style.display = 'block'
+}
+function openLightbox(src) {
+  document.getElementById('lightboxImg').src = src
+  document.getElementById('lightbox').classList.remove('hidden')
+}
+function closeLightbox() { document.getElementById('lightbox').classList.add('hidden') }
+
+function launchConfetti() {
+  const colors = ['#6c63ff','#48bb78','#f6ad55','#fc8181','#63b3ed','#f687b3']
+  const c = document.getElementById('confettiContainer')
+  for (let i = 0; i < 60; i++) {
+    const el = document.createElement('div')
+    el.className = 'confetti-piece'
+    el.style.cssText = `left:${Math.random()*100}vw;background:${colors[~~(Math.random()*6)]};animation-duration:${1.5+Math.random()*2}s;animation-delay:${Math.random()*.8}s;width:${6+Math.random()*8}px;height:${6+Math.random()*8}px`
+    c.appendChild(el)
+    el.addEventListener('animationend', () => el.remove())
+  }
+}
+
+// Feedback
+function openFeedback() {
+  document.getElementById('feedbackName').value = userName || ''
+  document.getElementById('feedbackContent').value = ''
+  document.getElementById('feedbackAlert').style.display = 'none'
+  document.getElementById('feedbackModal').classList.remove('hidden')
+}
+function closeFeedback() {
+  document.getElementById('feedbackModal').classList.add('hidden')
+}
+async function submitFeedback() {
+  const content = document.getElementById('feedbackContent').value.trim()
+  if (!content) {
+    const el = document.getElementById('feedbackAlert')
+    el.textContent = '请输入反馈内容'; el.className = 'alert error'; el.style.display = 'block'
+    return
+  }
+  const btn = document.getElementById('feedbackSubmit')
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>提交中…'
+
+  const name = document.getElementById('feedbackName').value.trim() || '匿名'
+  const { error } = await db.from('feedback').insert({ name, content })
+
+  if (error) {
+    const el = document.getElementById('feedbackAlert')
+    el.textContent = '提交失败，请重试'; el.className = 'alert error'; el.style.display = 'block'
+    btn.disabled = false; btn.textContent = '提交'
+    return
+  }
+  btn.disabled = false; btn.textContent = '提交'
+  closeFeedback()
+  // Brief thank-you
+  setTimeout(() => alert('感谢你的反馈 🙏'), 100)
+}
+
+/* ---- Reflection ---- */
+let currentReflection = null
+
+async function loadReflection() {
+  if (!activeRound) return
+  const { data } = await db.from('reflections').select('*')
+    .eq('name', userName).eq('round_id', activeRound.id).maybeSingle()
+  currentReflection = data || null
+
+  // Determine if round has ended
+  const startDate = new Date(activeRound.start_date)
+  const endDate = new Date(startDate)
+  endDate.setDate(endDate.getDate() + parseInt(activeRound.total_days))
+  const isEnded = new Date() >= endDate
+
+  renderReflection(true)
+}
+
+function renderReflection(isEnded) {
+  const view = document.getElementById('reflectionView')
+  const empty = document.getElementById('reflectionEmpty')
+  const input = document.getElementById('reflectionInput')
+  const btns = document.getElementById('reflectionBtns')
+
+  view.classList.add('hidden')
+  empty.classList.add('hidden')
+  input.classList.add('hidden')
+  btns.innerHTML = ''
+
+  if (currentReflection) {
+    view.textContent = currentReflection.content
+    view.classList.remove('hidden')
+    btns.innerHTML = `<button onclick="editReflection()" style="padding:7px 16px;border:1.5px solid var(--border);border-radius:9px;background:transparent;color:var(--text-muted);font-size:13px;font-weight:600;cursor:pointer">✏️ 修改心得</button>`
+  } else {
+    empty.classList.remove('hidden')
+    btns.innerHTML = `<button onclick="editReflection()" style="padding:7px 16px;background:var(--primary);color:white;border:none;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer">✍️ 写心得</button>`
+  }
+}
+
+function editReflection() {
+  const view = document.getElementById('reflectionView')
+  const empty = document.getElementById('reflectionEmpty')
+  const input = document.getElementById('reflectionInput')
+  const btns = document.getElementById('reflectionBtns')
+
+  view.classList.add('hidden')
+  empty.classList.add('hidden')
+  input.classList.remove('hidden')
+  input.value = currentReflection ? currentReflection.content : ''
+  input.focus()
+
+  btns.innerHTML = `
+    <button onclick="saveReflection()" style="padding:7px 16px;background:var(--primary);color:white;border:none;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer">保存</button>
+    <button onclick="loadReflection()" style="padding:7px 16px;border:1.5px solid var(--border);border-radius:9px;background:transparent;color:var(--text-muted);font-size:13px;cursor:pointer">取消</button>
+  `
+}
+
+async function saveReflection() {
+  const content = document.getElementById('reflectionInput').value.trim()
+  if (!content) { alert('请填写心得内容'); return }
+  const payload = { name: userName, round_id: activeRound.id, content, updated_at: new Date().toISOString() }
+  await db.from('reflections').upsert(payload, { onConflict: 'name,round_id' })
+  currentReflection = { ...payload }
+  const startDate = new Date(activeRound.start_date)
+  const endDate = new Date(startDate); endDate.setDate(endDate.getDate() + parseInt(activeRound.total_days))
+  renderReflection(new Date() >= endDate)
+}
+
+init()
+
+// Study room entry card
+;(async () => {
+  const card = document.getElementById('roomEntryCard')
+  if (!card) return
+  card.style.display = 'block'
+  try {
+    const { data: round } = await db.from('rounds').select('id').eq('is_active', true).single()
+    let q = db.from('study_room_members').select('name', { count: 'exact', head: true })
+    if (round) q = q.eq('round_id', round.id)
+    const { count } = await q
+    const el = document.getElementById('roomEntryCount')
+    if (el) el.textContent = count ? `已有 ${count} 位成员在自习室` : '和大家一起学习'
+  } catch(e) {}
+})()
+</script>
+</body>
+</html>

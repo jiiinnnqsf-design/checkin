@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的计划</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --primary: #6c63ff; --primary-light: #ede9ff;
+    --success: #48bb78; --success-light: #e6f9ef;
+    --warning: #f6ad55; --warning-light: #fff8ee;
+    --text: #2d3748; --text-muted: #718096;
+    --border: #e2e8f0; --bg: #f7f8fc; --card: #ffffff;
+    --radius: 16px; --shadow: 0 2px 16px rgba(0,0,0,0.07);
+    --shadow-lg: 0 8px 32px rgba(108,99,255,0.15);
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 60px; }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+  .modal { background: var(--card); border-radius: var(--radius); padding: 40px 32px; width: 100%; max-width: 360px; box-shadow: var(--shadow-lg); animation: slideUp .3s ease; }
+  .modal-icon { font-size: 48px; text-align: center; margin-bottom: 16px; }
+  .modal h2 { font-size: 22px; font-weight: 700; text-align: center; margin-bottom: 8px; }
+  .modal p { color: var(--text-muted); text-align: center; margin-bottom: 28px; font-size: 14px; }
+
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 0 20px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+  .app-name { font-size: 18px; font-weight: 700; color: var(--primary); }
+  .user-chip { display: flex; align-items: center; gap: 8px; background: var(--primary-light); color: var(--primary); padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 600; }
+  .back-btn { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 14px; text-decoration: none; transition: color .15s; }
+  .back-btn:hover { color: var(--primary); }
+
+  .container { max-width: 560px; margin: 0 auto; padding: 24px 16px; }
+
+  .status-banner { border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .status-banner.open { background: var(--success-light); color: #276749; }
+  .status-banner.closed { background: var(--warning-light); color: #c05621; }
+
+  .card { background: var(--card); border-radius: var(--radius); padding: 24px; margin-bottom: 16px; box-shadow: var(--shadow); }
+  .card-title { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 20px; }
+
+  .field { margin-bottom: 20px; }
+  .field-label { display: block; font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .field-hint { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+  .required { color: #fc8181; margin-left: 3px; }
+  textarea, input[type=text] {
+    width: 100%; padding: 12px 14px; border: 2px solid var(--border);
+    border-radius: 12px; font-size: 14px; font-family: inherit;
+    outline: none; transition: border-color .2s; color: var(--text);
+    background: var(--card);
+  }
+  textarea { resize: none; }
+  textarea:focus, input[type=text]:focus { border-color: var(--primary); }
+  textarea[readonly], input[readonly] { background: var(--bg); color: var(--text-muted); cursor: default; border-color: var(--border) !important; }
+
+  .upload-area { border: 2px dashed var(--border); border-radius: 12px; padding: 24px 16px; text-align: center; cursor: pointer; transition: all .2s; position: relative; overflow: hidden; }
+  .upload-area:hover, .upload-area.drag-over { border-color: var(--primary); background: var(--primary-light); }
+  .upload-area input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .upload-area.readonly { pointer-events: none; border-style: solid; }
+  .preview-img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 10px; display: none; }
+
+  .btn { display: block; width: 100%; padding: 14px; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all .2s; }
+  .btn-primary { background: linear-gradient(135deg, var(--primary), #8b5cf6); color: white; box-shadow: 0 4px 15px rgba(108,99,255,0.3); }
+  .btn-primary:hover { transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-outline { background: transparent; border: 2px solid var(--border); color: var(--text-muted); font-size: 14px; padding: 10px; }
+  .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+
+  .input-wrap { margin-bottom: 20px; }
+  .input-wrap label { display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
+  .input-wrap input { padding: 13px 16px; font-size: 16px; }
+
+  .submitted-view { }
+  .plan-overview { font-size: 15px; line-height: 1.8; color: var(--text); white-space: pre-wrap; }
+  .plan-answer { background: var(--bg); border-radius: 10px; padding: 12px 16px; font-size: 14px; line-height: 1.7; color: var(--text); white-space: pre-wrap; }
+  .plan-q { font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; }
+
+  .edit-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--primary-light); color: var(--primary); border: none; border-radius: 8px; padding: 7px 16px; font-size: 13px; font-weight: 700; cursor: pointer; margin-bottom: 20px; }
+  .edit-btn:hover { opacity: .85; }
+
+  .plan-img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 12px; margin-top: 4px; cursor: pointer; }
+
+  /* Updates section */
+  .update-item { background: var(--bg); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+  .update-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600; }
+  .update-content { font-size: 14px; line-height: 1.7; color: var(--text); white-space: pre-wrap; }
+  .update-img { width: 100%; max-height: 160px; object-fit: cover; border-radius: 8px; margin-top: 8px; cursor: pointer; }
+
+  .divider { display: flex; align-items: center; gap: 12px; margin: 8px 0 20px; }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .divider span { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+  .closed-note { text-align: center; padding: 32px 16px; color: var(--text-muted); font-size: 15px; }
+  .closed-note .icon { font-size: 40px; margin-bottom: 12px; }
+
+  .alert { padding: 12px 16px; border-radius: 10px; font-size: 14px; margin-bottom: 12px; }
+  .alert.error { background: #fff5f5; color: #c53030; border: 1px solid #fed7d7; }
+  .alert.success { background: var(--success-light); color: #276749; border: 1px solid #c6f6d5; }
+
+  .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.4); border-top-color: white; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .hidden { display: none !important; }
+
+  .loading-mask { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 999; flex-direction: column; gap: 12px; }
+  .loading-dot { font-size: 32px; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.2)} }
+
+  footer { text-align: center; padding: 20px; font-size: 12px; color: #c0c8d8; }
+
+  .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; cursor: pointer; }
+  .lightbox img { max-width: 100%; max-height: 90vh; border-radius: 8px; }
+</style>
+</head>
+<body>
+
+<div class="loading-mask" id="loadingMask">
+  <div class="loading-dot">📋</div>
+  <div style="color:var(--text-muted);font-size:14px">加载中…</div>
+</div>
+
+<div class="modal-overlay hidden" id="nameModal">
+  <div class="modal">
+    <div class="modal-icon">👋</div>
+    <h2>填写计划表</h2>
+    <p>请先输入你的名字</p>
+    <div class="input-wrap">
+      <label>你的名字</label>
+      <input type="text" id="nameInput" placeholder="输入名字…" maxlength="20" autocomplete="off">
+    </div>
+    <button class="btn btn-primary" id="saveName">继续</button>
+  </div>
+</div>
+
+<header>
+  <a class="back-btn" href="/">← 返回打卡</a>
+  <span class="app-name">我的计划</span>
+  <div class="user-chip">
+    <span>👤</span>
+    <span id="headerName">--</span>
+  </div>
+</header>
+
+<div class="container" id="mainContent" style="display:none">
+
+  <div class="status-banner hidden" id="bannerOpen">
+    <span>✏️</span>
+    <span>计划收集中，截止 <strong id="deadlineText"></strong>，可随时修改</span>
+  </div>
+  <div class="status-banner closed hidden" id="bannerClosed">
+    <span>🔒</span>
+    <span>计划收集已结束，可查看计划或追加新计划</span>
+  </div>
+
+  <!-- Empty state: collection open, no plan yet -->
+  <div id="formSection" class="hidden">
+    <div class="card">
+      <div class="card-title">填写计划表</div>
+      <div id="formAlert"></div>
+
+      <div class="field">
+        <label class="field-label">概述你的计划<span class="required">*</span></label>
+        <div class="field-hint">必填，简单说说你这次的阅读计划</div>
+        <textarea id="f_overview" rows="4" placeholder="例如：我计划每天睡前阅读30分钟，重点精读…"></textarea>
+      </div>
+
+      <div class="field">
+        <label class="field-label">你希望收获什么？</label>
+        <textarea id="f_q2" rows="3" placeholder="选填"></textarea>
+      </div>
+
+      <div class="field">
+        <label class="field-label">你计划每天投入多少时间？</label>
+        <textarea id="f_q3" rows="2" placeholder="选填，如：30分钟、1小时…"></textarea>
+      </div>
+
+      <div class="field">
+        <label class="field-label">遇到困难时你会怎么做？</label>
+        <textarea id="f_q4" rows="3" placeholder="选填"></textarea>
+      </div>
+
+      <div class="field">
+        <label class="field-label">上传计划图片（选填）</label>
+        <div class="upload-area" id="planUploadArea">
+          <input type="file" id="planImageInput" accept="image/*">
+          <div id="planUploadPlaceholder">
+            <div style="font-size:28px;margin-bottom:6px">🖼️</div>
+            <div style="font-weight:600;font-size:14px;margin-bottom:4px">点击上传图片</div>
+            <div style="font-size:12px;color:var(--text-muted)">可上传手写计划、思维导图等</div>
+          </div>
+          <img class="preview-img" id="planPreviewImg" src="" alt="">
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="submitPlanBtn">提交计划</button>
+    </div>
+  </div>
+
+  <!-- Has plan: view/edit mode -->
+  <div id="viewSection" class="hidden">
+    <div class="card" id="planViewCard">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div class="card-title" style="margin-bottom:0">我的计划</div>
+        <button class="edit-btn hidden" id="editBtn" onclick="enterEditMode()">✏️ 修改</button>
+      </div>
+      <div id="planViewContent"></div>
+    </div>
+
+    <!-- Updates section (visible after deadline) -->
+    <div class="card hidden" id="updatesSection">
+      <div class="card-title">计划追加</div>
+      <div id="updatesList"></div>
+
+      <div class="divider"><span>追加新计划</span></div>
+      <div id="addUpdateAlert"></div>
+      <div class="field">
+        <label class="field-label">新增内容</label>
+        <textarea id="updateContent" rows="3" placeholder="写下新的计划或调整…"></textarea>
+      </div>
+      <div class="field">
+        <label class="field-label">配图（选填）</label>
+        <div class="upload-area" id="updateUploadArea">
+          <input type="file" id="updateImageInput" accept="image/*">
+          <div id="updateUploadPlaceholder">
+            <div style="font-size:24px;margin-bottom:4px">📎</div>
+            <div style="font-size:13px;color:var(--text-muted)">点击上传图片（选填）</div>
+          </div>
+          <img class="preview-img" id="updatePreviewImg" src="" alt="">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="addUpdateBtn">追加计划</button>
+    </div>
+  </div>
+
+  <!-- Closed, no plan -->
+  <div id="closedNoplan" class="hidden">
+    <div class="card">
+      <div class="closed-note">
+        <div class="icon">🔒</div>
+        <div>计划收集已结束</div>
+        <div style="font-size:13px;margin-top:8px">你没有在收集期内提交计划</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>语擦女读书会 &nbsp;·&nbsp; <span onclick="window.location='/'" style="cursor:pointer;text-decoration:underline;text-underline-offset:3px">返回打卡</span></footer>
+
+<div class="lightbox hidden" id="lightbox" onclick="closeLightbox()">
+  <img id="lightboxImg" src="" alt="">
+</div>
+
+<script>
+const SUPABASE_URL = 'https://nepjhfhbxgxlqsbhvwsa.supabase.co'
+const SUPABASE_ANON_KEY = 'sb_publishable_j18YmVc3EyArtsnNe_Oqbw_w4H90A_1'
+
+const { createClient } = supabase
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+let userName = localStorage.getItem('checkin_name') || ''
+let appSettings = {}
+let activeRound = null
+let isCollectionOpen = false
+let existingPlan = null
+let isEditMode = false
+
+async function init() {
+  const { data: rows } = await db.from('settings').select('*')
+  if (rows) rows.forEach(r => appSettings[r.key] = r.value)
+
+  const { data: round } = await db.from('rounds').select('*').eq('is_active', true).single()
+  activeRound = round || null
+
+  document.getElementById('loadingMask').style.display = 'none'
+
+  if (!userName) {
+    document.getElementById('nameModal').classList.remove('hidden')
+    setTimeout(() => document.getElementById('nameInput').focus(), 100)
+    return
+  }
+  showApp()
+}
+
+async function showApp() {
+  document.getElementById('nameModal').classList.add('hidden')
+  document.getElementById('headerName').textContent = userName
+  document.getElementById('mainContent').style.display = 'block'
+
+  const deadline = activeRound?.plan_deadline || appSettings.planDeadline
+  const now = new Date()
+  isCollectionOpen = deadline ? now <= new Date(deadline + 'T23:59:59') : true
+
+  if (isCollectionOpen) {
+    document.getElementById('bannerOpen').classList.remove('hidden')
+    document.getElementById('deadlineText').textContent = deadline || '待定'
+  } else {
+    document.getElementById('bannerClosed').classList.remove('hidden')
+  }
+
+  // Load existing plan for current round
+  let planQuery = db.from('plans').select('*').eq('name', userName).eq('deleted', false)
+  if (activeRound) planQuery = planQuery.eq('round_id', activeRound.id)
+  const { data: plan } = await planQuery.single()
+  existingPlan = plan
+
+  if (!plan) {
+    if (isCollectionOpen) {
+      document.getElementById('formSection').classList.remove('hidden')
+    } else {
+      document.getElementById('closedNoplan').classList.remove('hidden')
+    }
+    return
+  }
+
+  // Has plan
+  document.getElementById('viewSection').classList.remove('hidden')
+  if (isCollectionOpen) {
+    document.getElementById('editBtn').classList.remove('hidden')
+  } else {
+    // Show updates section after deadline
+    document.getElementById('updatesSection').classList.remove('hidden')
+    loadUpdates()
+  }
+  renderPlanView(plan)
+}
+
+function renderPlanView(plan, editMode = false) {
+  const el = document.getElementById('planViewContent')
+  const ro = !editMode
+  el.innerHTML = `
+    ${editMode ? '<div id="editAlert"></div>' : ''}
+    <div class="field">
+      <div class="plan-q">概述你的计划 ${editMode ? '<span style="color:#fc8181">*</span>' : ''}</div>
+      <textarea id="e_overview" rows="4" ${ro ? 'readonly' : ''} style="border-color:${ro?'transparent':'var(--border)'}">${plan.overview || ''}</textarea>
+    </div>
+    ${renderField('你希望收获什么？', 'e_q2', plan.q2, ro)}
+    ${renderField('你计划每天投入多少时间？', 'e_q3', plan.q3, ro)}
+    ${renderField('遇到困难时你会怎么做？', 'e_q4', plan.q4, ro)}
+    ${plan.image_url && !editMode ? `
+      <div class="field">
+        <div class="plan-q">计划图片</div>
+        <img class="plan-img" src="${plan.image_url}" onclick="openLightbox('${plan.image_url}')">
+      </div>` : ''}
+    ${editMode ? `
+      <div class="field">
+        <label class="field-label">计划图片（选填）</label>
+        <div class="upload-area" id="editUploadArea">
+          <input type="file" id="editImageInput" accept="image/*">
+          <div id="editUploadPlaceholder">
+            ${plan.image_url
+              ? `<img src="${plan.image_url}" style="width:100%;max-height:140px;object-fit:cover;border-radius:8px;pointer-events:none">`
+              : '<div style="font-size:24px;margin-bottom:4px">🖼️</div><div style="font-size:13px;color:var(--text-muted)">点击更换图片</div>'}
+          </div>
+          <img class="preview-img" id="editPreviewImg" src="" alt="">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-outline" style="flex:1" onclick="cancelEdit()">取消</button>
+        <button class="btn btn-primary" style="flex:2" id="savePlanBtn" onclick="savePlan()">保存修改</button>
+      </div>` : ''}
+  `
+  if (editMode) {
+    const inp = document.getElementById('editImageInput')
+    if (inp) inp.addEventListener('change', e => {
+      const file = e.target.files[0]; if (!file) return
+      document.getElementById('editPreviewImg').src = URL.createObjectURL(file)
+      document.getElementById('editPreviewImg').style.display = 'block'
+      document.getElementById('editUploadPlaceholder').style.display = 'none'
+    })
+  }
+}
+
+function renderField(label, id, value, readonly) {
+  if (readonly && !value) return ''
+  return `
+    <div class="field">
+      <div class="plan-q">${label}</div>
+      ${readonly
+        ? `<div class="plan-answer">${value}</div>`
+        : `<textarea id="${id}" rows="3" ${readonly ? 'readonly' : ''}>${value || ''}</textarea>`}
+    </div>`
+}
+
+function enterEditMode() {
+  isEditMode = true
+  document.getElementById('editBtn').classList.add('hidden')
+  renderPlanView(existingPlan, true)
+}
+
+function cancelEdit() {
+  isEditMode = false
+  document.getElementById('editBtn').classList.remove('hidden')
+  renderPlanView(existingPlan, false)
+}
+
+async function savePlan() {
+  const overview = document.getElementById('e_overview').value.trim()
+  if (!overview) { showAlert('editAlert', '请填写计划概述', 'error'); return }
+  const btn = document.getElementById('savePlanBtn')
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>保存中…'
+
+  let imageUrl = existingPlan.image_url
+  const file = document.getElementById('editImageInput')?.files[0]
+  if (file) {
+    const safeName = encodeURIComponent(userName).replace(/%/g, '_')
+    const ext = file.name.split('.').pop()
+    const path = `plans/${safeName}-${Date.now()}.${ext}`
+    const { error: upErr } = await db.storage.from('checkin-images').upload(path, file)
+    if (!upErr) {
+      const { data: { publicUrl } } = db.storage.from('checkin-images').getPublicUrl(path)
+      imageUrl = publicUrl
+    }
+  }
+
+  const payload = {
+    name: userName,
+    round_id: activeRound ? activeRound.id : null,
+    overview,
+    q2: document.getElementById('e_q2')?.value.trim() || null,
+    q3: document.getElementById('e_q3')?.value.trim() || null,
+    q4: document.getElementById('e_q4')?.value.trim() || null,
+    image_url: imageUrl,
+    updated_at: new Date().toISOString()
+  }
+
+  const { error } = await db.from('plans').upsert(payload, { onConflict: 'name,round_id' })
+  if (error) { showAlert('editAlert', '保存失败：' + error.message, 'error'); btn.disabled = false; btn.textContent = '保存修改'; return }
+
+  existingPlan = { ...existingPlan, ...payload }
+  isEditMode = false
+  document.getElementById('editBtn').classList.remove('hidden')
+  renderPlanView(existingPlan, false)
+}
+
+// Submit new plan
+document.getElementById('submitPlanBtn').addEventListener('click', async () => {
+  const overview = document.getElementById('f_overview').value.trim()
+  if (!overview) { showAlert('formAlert', '请填写计划概述（必填）', 'error'); return }
+  const btn = document.getElementById('submitPlanBtn')
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>提交中…'
+
+  let imageUrl = null
+  const file = document.getElementById('planImageInput').files[0]
+  if (file) {
+    const safeName = encodeURIComponent(userName).replace(/%/g, '_')
+    const ext = file.name.split('.').pop()
+    const path = `plans/${safeName}-${Date.now()}.${ext}`
+    const { error: upErr } = await db.storage.from('checkin-images').upload(path, file)
+    if (!upErr) {
+      const { data: { publicUrl } } = db.storage.from('checkin-images').getPublicUrl(path)
+      imageUrl = publicUrl
+    }
+  }
+
+  const payload = {
+    name: userName,
+    round_id: activeRound ? activeRound.id : null,
+    overview,
+    q2: document.getElementById('f_q2').value.trim() || null,
+    q3: document.getElementById('f_q3').value.trim() || null,
+    q4: document.getElementById('f_q4').value.trim() || null,
+    image_url: imageUrl
+  }
+
+  const { error } = await db.from('plans').upsert(payload, { onConflict: 'name,round_id' })
+  if (error) { showAlert('formAlert', '提交失败：' + error.message, 'error'); btn.disabled = false; btn.textContent = '提交计划'; return }
+
+  existingPlan = payload
+  document.getElementById('formSection').classList.add('hidden')
+  document.getElementById('viewSection').classList.remove('hidden')
+  document.getElementById('editBtn').classList.remove('hidden')
+  renderPlanView(payload, false)
+})
+
+// Plan image upload preview
+const planImg = document.getElementById('planImageInput')
+planImg.addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return
+  document.getElementById('planPreviewImg').src = URL.createObjectURL(file)
+  document.getElementById('planPreviewImg').style.display = 'block'
+  document.getElementById('planUploadPlaceholder').style.display = 'none'
+})
+
+// Load updates
+async function loadUpdates() {
+  const { data: updates } = await db.from('plan_updates').select('*').eq('name', userName).order('timestamp', { ascending: true })
+  const list = updates || []
+  const el = document.getElementById('updatesList')
+  if (!list.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;margin-bottom:16px">暂无追加计划</div>'; return }
+  el.innerHTML = list.map(u => `
+    <div class="update-item">
+      <div class="update-meta">${new Date(u.timestamp).toLocaleDateString('zh-CN', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}</div>
+      <div class="update-content">${u.content}</div>
+      ${u.image_url ? `<img class="update-img" src="${u.image_url}" onclick="openLightbox('${u.image_url}')">` : ''}
+    </div>
+  `).join('')
+}
+
+// Add update
+document.getElementById('addUpdateBtn').addEventListener('click', async () => {
+  const content = document.getElementById('updateContent').value.trim()
+  if (!content) { showAlert('addUpdateAlert', '请填写追加内容', 'error'); return }
+  const btn = document.getElementById('addUpdateBtn')
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>提交中…'
+
+  let imageUrl = null
+  const file = document.getElementById('updateImageInput').files[0]
+  if (file) {
+    const safeName = encodeURIComponent(userName).replace(/%/g, '_')
+    const ext = file.name.split('.').pop()
+    const path = `plans/updates/${safeName}-${Date.now()}.${ext}`
+    const { error: upErr } = await db.storage.from('checkin-images').upload(path, file)
+    if (!upErr) {
+      const { data: { publicUrl } } = db.storage.from('checkin-images').getPublicUrl(path)
+      imageUrl = publicUrl
+    }
+  }
+
+  const { error } = await db.from('plan_updates').insert({ name: userName, content, image_url: imageUrl })
+  if (error) { showAlert('addUpdateAlert', '提交失败', 'error'); btn.disabled = false; btn.textContent = '追加计划'; return }
+
+  document.getElementById('updateContent').value = ''
+  document.getElementById('updateImageInput').value = ''
+  document.getElementById('updatePreviewImg').style.display = 'none'
+  document.getElementById('updateUploadPlaceholder').style.display = 'block'
+  btn.disabled = false; btn.textContent = '追加计划'
+  loadUpdates()
+})
+
+// Update image preview
+document.getElementById('updateImageInput').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return
+  document.getElementById('updatePreviewImg').src = URL.createObjectURL(file)
+  document.getElementById('updatePreviewImg').style.display = 'block'
+  document.getElementById('updateUploadPlaceholder').style.display = 'none'
+})
+
+// Name modal
+document.getElementById('saveName').onclick = async () => {
+  const val = document.getElementById('nameInput').value.trim()
+  if (!val) { document.getElementById('nameInput').focus(); return }
+  userName = val
+  localStorage.setItem('checkin_name', userName)
+  await showApp()
+}
+document.getElementById('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('saveName').click() })
+
+function showAlert(id, msg, type) {
+  const el = document.getElementById(id)
+  if (!el) return
+  el.innerHTML = `<div class="alert ${type}">${msg}</div>`
+}
+
+function openLightbox(src) { document.getElementById('lightboxImg').src = src; document.getElementById('lightbox').classList.remove('hidden') }
+function closeLightbox() { document.getElementById('lightbox').classList.add('hidden') }
+
+init()
+</script>
+</body>
+</html>

@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理后台 — 打卡系统</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --primary: #6c63ff; --primary-light: #ede9ff;
+    --success: #48bb78; --success-light: #e6f9ef;
+    --warning: #f6ad55; --warning-light: #fff8ee;
+    --danger: #fc8181; --danger-light: #fff5f5;
+    --text: #2d3748; --text-muted: #718096;
+    --border: #e2e8f0; --bg: #f7f8fc; --card: #ffffff;
+    --radius: 14px; --shadow: 0 2px 12px rgba(0,0,0,0.07);
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  .login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .login-card { background: var(--card); border-radius: var(--radius); padding: 40px 32px; width: 100%; max-width: 360px; box-shadow: 0 8px 32px rgba(108,99,255,0.15); animation: slideUp .3s ease; }
+  .login-icon { font-size: 44px; text-align: center; margin-bottom: 16px; }
+  .login-card h1 { font-size: 22px; font-weight: 800; text-align: center; margin-bottom: 6px; }
+  .login-card p { text-align: center; color: var(--text-muted); font-size: 14px; margin-bottom: 28px; }
+  .inp { width: 100%; padding: 13px 16px; border: 2px solid var(--border); border-radius: 12px; font-size: 16px; outline: none; transition: border-color .2s; font-family: inherit; margin-bottom: 16px; }
+  .inp:focus { border-color: var(--primary); }
+  .btn-block { display: block; width: 100%; padding: 14px; border: none; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #6c63ff, #8b5cf6); color: white; box-shadow: 0 4px 15px rgba(108,99,255,0.3); transition: all .2s; }
+  .btn-block:hover { transform: translateY(-1px); }
+  .error-msg { color: #c53030; font-size: 13px; margin-top: -10px; margin-bottom: 12px; }
+
+  #app { display: none; }
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+  .header-left { display: flex; align-items: center; gap: 12px; }
+  .app-name { font-size: 17px; font-weight: 700; color: var(--primary); }
+  .admin-badge { background: var(--primary-light); color: var(--primary); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+  .btn-sm { padding: 7px 14px; border-radius: 8px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; }
+  .btn-sm.outline { background: transparent; border: 1.5px solid var(--border); color: var(--text-muted); }
+  .btn-sm.outline:hover { border-color: var(--primary); color: var(--primary); }
+  .btn-sm.primary { background: var(--primary); color: white; }
+
+  .container { max-width: 960px; margin: 0 auto; padding: 28px 20px; }
+
+  .overview-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+  .overview-card { background: var(--card); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
+  .overview-card .label { font-size: 12px; color: var(--text-muted); font-weight: 600; margin-bottom: 8px; }
+  .overview-card .value { font-size: 28px; font-weight: 800; }
+  .overview-card.c1 .value { color: var(--primary); }
+  .overview-card.c2 .value { color: var(--success); }
+  .overview-card.c3 .value { color: var(--warning); }
+  .overview-card.c4 .value { color: #63b3ed; }
+
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .section-title { font-size: 15px; font-weight: 700; }
+  .search-input { padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; outline: none; transition: border-color .2s; width: 180px; }
+  .search-input:focus { border-color: var(--primary); }
+
+  .user-list { display: flex; flex-direction: column; gap: 12px; }
+  .user-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+  .user-header { display: flex; align-items: center; padding: 16px 20px; cursor: pointer; transition: background .15s; gap: 14px; }
+  .user-header:hover { background: #fafbff; }
+  .user-avatar { width: 42px; height: 42px; background: var(--primary-light); color: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 800; flex-shrink: 0; }
+  .user-info { flex: 1; min-width: 0; }
+  .user-name { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .user-meta { display: flex; gap: 10px; flex-wrap: wrap; }
+  .tag { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 6px; }
+  .tag.success { background: var(--success-light); color: #276749; }
+  .tag.warning { background: var(--warning-light); color: #c05621; }
+  .tag.muted { background: var(--bg); color: var(--text-muted); }
+  .user-chevron { color: var(--text-muted); font-size: 14px; transition: transform .2s; }
+  .user-card.open .user-chevron { transform: rotate(90deg); }
+  .user-body { display: none; padding: 0 20px 20px; border-top: 1px solid var(--border); }
+  .user-card.open .user-body { display: block; }
+  .checkin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-top: 16px; }
+  .checkin-thumb { border-radius: 10px; overflow: hidden; background: var(--bg); }
+  .checkin-thumb img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; cursor: pointer; }
+  .checkin-thumb .thumb-date { padding: 5px 8px; font-size: 11px; color: var(--text-muted); font-weight: 600; }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+  .modal { background: var(--card); border-radius: var(--radius); padding: 32px; width: 100%; max-width: 420px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); animation: slideUp .25s ease; }
+  .modal h2 { font-size: 18px; font-weight: 800; margin-bottom: 20px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+  .field input { width: 100%; padding: 11px 14px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 15px; outline: none; font-family: inherit; transition: border-color .2s; }
+  .field input:focus { border-color: var(--primary); }
+  .modal-actions { display: flex; gap: 10px; margin-top: 24px; }
+  .btn-full { flex: 1; padding: 12px; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; }
+  .btn-full.primary { background: var(--primary); color: white; }
+  .btn-full.cancel { background: var(--bg); color: var(--text-muted); }
+  .btn-full.cancel:hover { background: var(--border); }
+
+  .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; cursor: pointer; }
+  .lightbox img { max-width: 100%; max-height: 90vh; border-radius: 8px; }
+
+  .empty { text-align: center; padding: 48px 20px; color: var(--text-muted); font-size: 15px; }
+  .hidden { display: none !important; }
+  @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @media (max-width: 600px) { .overview-row { grid-template-columns: 1fr 1fr; } .container { padding: 20px 14px; } }
+
+  .filter-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .filter-tab {
+    padding: 6px 16px; border-radius: 20px; border: 1.5px solid var(--border);
+    background: transparent; font-size: 13px; font-weight: 600;
+    color: var(--text-muted); cursor: pointer; transition: all .15s;
+  }
+  .filter-tab:hover { border-color: var(--primary); color: var(--primary); }
+  .filter-tab.active { background: var(--primary); border-color: var(--primary); color: white; }
+  .filter-count {
+    display: inline-block; background: rgba(255,255,255,0.3);
+    border-radius: 10px; padding: 1px 7px; font-size: 11px; margin-left: 4px;
+  }
+  .filter-tab:not(.active) .filter-count { background: var(--bg); color: var(--text-muted); }
+
+  footer { text-align: center; padding: 24px; color: #c0c8d8; font-size: 12px; }
+
+  .round-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+  .round-tab {
+    padding: 7px 18px; border-radius: 20px; border: 1.5px solid var(--border);
+    background: transparent; font-size: 13px; font-weight: 600;
+    color: var(--text-muted); cursor: pointer; transition: all .15s;
+  }
+  .round-tab:hover { border-color: var(--primary); color: var(--primary); }
+  .round-tab.active { background: var(--primary); border-color: var(--primary); color: white; }
+  .round-tab.new-round { border-color: var(--success); color: var(--success); }
+  .round-tab.new-round:hover { background: var(--success); color: white; }
+  .round-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-left: 4px; background: rgba(255,255,255,0.3); }
+  .round-tab:not(.active) .round-badge { background: var(--bg); }
+
+  .feedback-card {
+    background: var(--card); border-radius: 12px; padding: 16px 20px;
+    margin-bottom: 10px; box-shadow: var(--shadow);
+    display: flex; gap: 14px; align-items: flex-start;
+  }
+  .feedback-avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--primary-light); color: var(--primary);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 800; flex-shrink: 0;
+  }
+  .feedback-body { flex: 1; min-width: 0; }
+  .feedback-meta { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
+  .feedback-name { font-weight: 700; font-size: 14px; }
+  .feedback-time { font-size: 12px; color: var(--text-muted); }
+  .feedback-content { font-size: 14px; color: var(--text); line-height: 1.6; }
+
+  .note-bubble {
+    background: #f0f4ff; border-radius: 8px;
+    padding: 8px 12px; margin-top: 10px;
+    font-size: 13px; color: #4a5568; line-height: 1.6;
+    border-left: 3px solid var(--primary);
+  }
+  .note-label { font-size: 11px; color: var(--primary); font-weight: 700; margin-bottom: 4px; }
+
+  .thumb-actions { display: flex; gap: 6px; padding: 6px 8px 8px; }
+  .thumb-btn {
+    flex: 1; padding: 5px 0; border: none; border-radius: 6px;
+    font-size: 11px; font-weight: 700; cursor: pointer; transition: all .15s;
+  }
+  .thumb-btn.del { background: #fff5f5; color: #c53030; }
+  .thumb-btn.del:hover { background: #fed7d7; }
+  .thumb-btn.restore { background: var(--success-light); color: #276749; }
+  .thumb-btn.restore:hover { background: #c6f6d5; }
+  .deleted-overlay {
+    position: relative;
+  }
+  .deleted-overlay img { opacity: .35; filter: grayscale(1); }
+  .deleted-label {
+    position: absolute; top: 6px; left: 6px;
+    background: rgba(0,0,0,0.6); color: white;
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px;
+  }
+  .danger-zone {
+    margin-top: 16px; padding-top: 14px;
+    border-top: 1px dashed #fed7d7;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .danger-zone span { font-size: 12px; color: var(--text-muted); }
+  .btn-danger {
+    padding: 6px 14px; border: none; border-radius: 8px;
+    background: #fff5f5; color: #c53030;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    transition: background .15s;
+  }
+  .btn-danger:hover { background: #fed7d7; }
+  .btn-restore-user {
+    padding: 8px 18px; border: none; border-radius: 8px;
+    background: var(--success-light); color: #276749;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    transition: background .15s; width: 100%; margin-top: 12px;
+  }
+  .btn-restore-user:hover { background: #c6f6d5; }
+  .plan-card-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .plan-del-btn {
+    padding: 6px 14px; border: none; border-radius: 8px;
+    background: #fff5f5; color: #c53030;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+  }
+  .plan-del-btn:hover { background: #fed7d7; }
+  .plan-restore-btn {
+    padding: 6px 14px; border: none; border-radius: 8px;
+    background: var(--success-light); color: #276749;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+  }
+  .plan-restore-btn:hover { background: #c6f6d5; }
+  .plan-deleted-overlay { opacity: .45; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="login-icon">🔐</div>
+    <h1>管理后台</h1>
+    <p>请输入管理员密码</p>
+    <input class="inp" type="password" id="pwdInput" placeholder="密码…">
+    <div class="error-msg hidden" id="loginError">密码错误，请重试</div>
+    <button class="btn-block" id="loginBtn">进入后台</button>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <div class="header-left">
+      <span class="app-name" id="adminAppName">打卡系统</span>
+      <span class="admin-badge">管理后台</span>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn-sm outline" onclick="openSettings()">⚙ 设置</button>
+      <button class="btn-sm outline" onclick="loadData()">↻ 刷新</button>
+      <button class="btn-sm outline" onclick="logout()">退出</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="overview-row">
+      <div class="overview-card c1"><div class="label">参与人数</div><div class="value" id="ov-users">—</div></div>
+      <div class="overview-card c2"><div class="label">总打卡次数</div><div class="value" id="ov-total">—</div></div>
+      <div class="overview-card c3"><div class="label">规定总天数</div><div class="value" id="ov-days">—</div></div>
+      <div class="overview-card c4"><div class="label">已过天数</div><div class="value" id="ov-passed">—</div></div>
+    </div>
+    <div class="section-header">
+      <div class="section-title">打卡成员</div>
+      <input class="search-input" type="text" id="searchInput" placeholder="搜索姓名…" oninput="filterUsers()">
+    </div>
+    <div class="round-bar" id="roundBar"></div>
+    <div class="filter-tabs">
+      <button class="filter-tab active" onclick="setFilter('all')" id="tab-all">全部 <span class="filter-count" id="cnt-all">0</span></button>
+      <button class="filter-tab" onclick="setFilter('done')" id="tab-done">✅ 已完成 <span class="filter-count" id="cnt-done">0</span></button>
+      <button class="filter-tab" onclick="setFilter('progress')" id="tab-progress">🔥 进行中 <span class="filter-count" id="cnt-progress">0</span></button>
+      <button class="filter-tab" onclick="setFilter('missed')" id="tab-missed">⚠️ 有缺卡 <span class="filter-count" id="cnt-missed">0</span></button>
+      <button class="filter-tab" onclick="setFilter('deleted')" id="tab-deleted">🗑 已删除 <span class="filter-count" id="cnt-deleted">0</span></button>
+    </div>
+    <div class="user-list" id="userList"><div class="empty">加载中…</div></div>
+
+    <div style="margin-top:32px">
+      <div class="section-header">
+        <div class="section-title">📋 计划表</div>
+        <span style="font-size:13px;color:var(--text-muted)" id="planCount"></span>
+      </div>
+      <div id="planList"><div class="empty" style="padding:24px 0">暂无提交</div></div>
+    </div>
+
+    <div style="margin-top:32px">
+      <div class="section-header">
+        <div class="section-title">📚 共享自习室成员</div>
+        <span style="font-size:13px;color:var(--text-muted)" id="roomMemberCount"></span>
+      </div>
+      <div id="roomMemberList"><div class="empty" style="padding:24px 0">暂无成员</div></div>
+    </div>
+
+    <div style="margin-top:32px">
+      <div class="section-header">
+        <div class="section-title">💬 意见反馈</div>
+        <span style="font-size:13px;color:var(--text-muted)" id="feedbackCount"></span>
+      </div>
+      <div id="feedbackList"><div class="empty" style="padding:24px 0">暂无反馈</div></div>
+    </div>
+  </div>
+</div>
+
+<footer>语擦女读书会</footer>
+
+<!-- Round Modal (new) -->
+<div class="modal-overlay hidden" id="roundModal">
+  <div class="modal">
+    <h2>🔄 开启新一轮</h2>
+    <div class="field"><label>轮次名称</label><input type="text" id="roundName" placeholder="如：第二轮、7月场…"></div>
+    <div class="field"><label>计划收集截止日期</label><input type="date" id="roundPlanDeadline"></div>
+    <div class="field"><label>打卡开始日期</label><input type="date" id="roundStartDate"></div>
+    <div class="field"><label>打卡天数</label><input type="number" id="roundTotalDays" min="1" max="365" value="21"></div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">开启后当前轮次自动归档，新打卡将计入新轮次。</div>
+    <div class="modal-actions">
+      <button class="btn-full cancel" onclick="document.getElementById('roundModal').classList.add('hidden')">取消</button>
+      <button class="btn-full primary" onclick="createRound()">开启</button>
+    </div>
+  </div>
+</div>
+
+<!-- Round Edit Modal -->
+<div class="modal-overlay hidden" id="roundEditModal">
+  <div class="modal">
+    <h2>✏️ 编辑当前轮次</h2>
+    <input type="hidden" id="editRoundId">
+    <div class="field"><label>轮次名称</label><input type="text" id="editRoundName"></div>
+    <div class="field"><label>计划收集截止日期</label><input type="date" id="editRoundPlanDeadline"></div>
+    <div class="field"><label>打卡开始日期</label><input type="date" id="editRoundStart"></div>
+    <div class="field"><label>打卡天数</label><input type="number" id="editRoundDays" min="1" max="365"></div>
+    <div class="modal-actions">
+      <button class="btn-full cancel" onclick="document.getElementById('roundEditModal').classList.add('hidden')">取消</button>
+      <button class="btn-full primary" onclick="saveRoundEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay hidden" id="settingsModal">
+  <div class="modal">
+    <h2>⚙ 系统设置</h2>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">日期和天数请通过轮次栏的「✏️ 编辑」修改。</div>
+    <div class="field"><label>应用名称</label><input type="text" id="settingAppName"></div>
+    <div class="field"><label>计划收集截止日期</label><input type="date" id="settingPlanDeadline"></div>
+    <div class="field"><label>管理员密码（留空不修改）</label><input type="text" id="settingPassword" placeholder="留空不修改"></div>
+    <div class="modal-actions">
+      <button class="btn-full cancel" onclick="closeSettings()">取消</button>
+      <button class="btn-full primary" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="lightbox hidden" id="lightbox" onclick="closeLightbox()">
+  <img id="lightboxImg" src="" alt="">
+</div>
+
+<script>
+// =============================================
+// 填入你的 Supabase 信息（与 index.html 相同）
+// =============================================
+const SUPABASE_URL = 'https://nepjhfhbxgxlqsbhvwsa.supabase.co'
+const SUPABASE_ANON_KEY = 'sb_publishable_j18YmVc3EyArtsnNe_Oqbw_w4H90A_1'
+// =============================================
+
+const { createClient } = supabase
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+let allUsers = []
+let currentFilter = 'all'
+let allRounds = []
+let viewingRoundId = null
+let settings = {}
+
+document.getElementById('pwdInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('loginBtn').click()
+})
+
+document.getElementById('loginBtn').onclick = async () => {
+  const p = document.getElementById('pwdInput').value
+  const { data } = await db.from('settings').select('value').eq('key', 'adminPassword').single()
+  if (data?.value === p) {
+    document.getElementById('loginScreen').style.display = 'none'
+    document.getElementById('app').style.display = 'block'
+    loadData()
+  } else {
+    document.getElementById('loginError').classList.remove('hidden')
+  }
+}
+
+function logout() {
+  document.getElementById('loginScreen').style.display = 'flex'
+  document.getElementById('app').style.display = 'none'
+  document.getElementById('pwdInput').value = ''
+}
+
+async function loadData() {
+  // Load settings
+  const { data: rows } = await db.from('settings').select('*')
+  settings = {}
+  if (rows) rows.forEach(r => settings[r.key] = r.value)
+  document.getElementById('adminAppName').textContent = settings.appName || '打卡系统'
+
+  // Load rounds FIRST (needed for date calculations)
+  const { data: roundsData } = await db.from('rounds').select('*').order('created_at', { ascending: true })
+  allRounds = roundsData || []
+  const activeRound = allRounds.find(r => r.is_active)
+  if (viewingRoundId === null && activeRound) viewingRoundId = activeRound.id
+  renderRoundBar()
+
+  // Use round settings if available
+  const viewingRound = allRounds.find(r => r.id === viewingRoundId)
+  const curStartDate = viewingRound?.start_date || settings.startDate
+  const curTotalDays = parseInt(viewingRound?.total_days || settings.totalDays || 30)
+
+  document.getElementById('ov-days').textContent = curTotalDays
+
+  // Calc days passed
+  const start = new Date(curStartDate || new Date())
+  start.setHours(0,0,0,0)
+  const today = new Date(); today.setHours(0,0,0,0)
+  const daysPassed = Math.max(1, Math.floor((today - start) / 86400000) + 1)
+  const expectedDays = Math.min(daysPassed, curTotalDays)
+  document.getElementById('ov-passed').textContent = expectedDays
+
+  // Load all checkins (including deleted) filtered by round
+  let query = db.from('checkins').select('*').order('date', { ascending: false })
+  if (viewingRoundId) query = query.eq('round_id', viewingRoundId)
+  const { data: checkins } = await query
+  const list = checkins || []
+  const activeList = list.filter(c => !c.deleted)
+  const deletedCount = list.filter(c => c.deleted).length
+
+  // Group by user (active only for stats)
+  const userMap = {}
+  list.forEach(c => {
+    if (!userMap[c.name]) userMap[c.name] = []
+    userMap[c.name].push(c)
+  })
+
+  allUsers = Object.entries(userMap).map(([name, uCheckins]) => {
+    const activeCheckins = uCheckins.filter(c => !c.deleted)
+    const totalChecked = activeCheckins.length
+    const missedDays = Math.max(0, expectedDays - totalChecked)
+    const remainingDays = Math.max(0, curTotalDays - totalChecked)
+    const isDeleted = uCheckins.length > 0 && activeCheckins.length === 0
+    return { name, checkins: uCheckins, totalChecked, missedDays, remainingDays, isDeleted }
+  }).sort((a, b) => b.totalChecked - a.totalChecked)
+
+  document.getElementById('ov-users').textContent = allUsers.filter(u => !u.isDeleted).length
+  document.getElementById('ov-total').textContent = activeList.length
+
+  // Update filter counts
+  const totalDays = parseInt(settings.totalDays || 30)
+  const activeUsers = allUsers.filter(u => !u.isDeleted)
+  document.getElementById('cnt-all').textContent = activeUsers.length
+  document.getElementById('cnt-done').textContent = activeUsers.filter(u => u.totalChecked >= curTotalDays).length
+  document.getElementById('cnt-progress').textContent = activeUsers.filter(u => u.totalChecked < curTotalDays && u.missedDays === 0).length
+  document.getElementById('cnt-missed').textContent = activeUsers.filter(u => u.missedDays > 0).length
+  document.getElementById('cnt-deleted').textContent = allUsers.filter(u => u.isDeleted).length + deletedCount
+
+  applyFilter()
+
+  // Load plans for viewing round
+  let planQuery = db.from('plans').select('*').order('timestamp', { ascending: false })
+  if (viewingRoundId) planQuery = planQuery.eq('round_id', viewingRoundId)
+  const { data: plans } = await planQuery
+  renderPlans(plans || [])
+
+  // Load room members
+  let rmQuery = db.from('study_room_members').select('*').order('joined_at', { ascending: true })
+  if (viewingRoundId) rmQuery = rmQuery.eq('round_id', viewingRoundId)
+  const { data: roomMembers } = await rmQuery
+  renderRoomMembers(roomMembers || [])
+
+  // Load feedback
+  const { data: feedbacks } = await db.from('feedback').select('*').order('timestamp', { ascending: false })
+  renderFeedback(feedbacks || [])
+}
+
+function renderPlans(plans) {
+  const el = document.getElementById('planList')
+  const active = plans.filter(p => !p.deleted)
+  const deleted = plans.filter(p => p.deleted)
+  document.getElementById('planCount').textContent = `共 ${active.length} 份${deleted.length ? `，已删除 ${deleted.length} 份` : ''}`
+  if (!plans.length) { el.innerHTML = '<div class="empty" style="padding:24px 0">暂无提交</div>'; return }
+  el.innerHTML = plans.map(p => `
+    <div class="user-card" id="plancard-${CSS.escape(p.name)}">
+      <div class="user-header" onclick="this.closest('.user-card').classList.toggle('open')">
+        <div class="user-avatar" style="${p.deleted?'opacity:.4':''}">${p.name.charAt(0)}</div>
+        <div class="user-info">
+          <div class="user-name" style="${p.deleted?'text-decoration:line-through;color:var(--text-muted)':''}"> ${p.name}</div>
+          <div class="user-meta">
+            <span class="tag muted">${new Date(p.updated_at || p.timestamp).toLocaleDateString('zh-CN',{month:'short',day:'numeric'})}</span>
+            ${p.deleted ? '<span class="tag" style="background:#fff5f5;color:#c53030">已删除</span>' : '<span class="tag success">已提交</span>'}
+          </div>
+        </div>
+        <span class="user-chevron">›</span>
+      </div>
+      <div class="user-body">
+        <div style="padding-top:4px" class="${p.deleted?'plan-deleted-overlay':''}">
+          <div class="note-label" style="margin-bottom:6px">概述计划</div>
+          <div style="font-size:14px;line-height:1.7;white-space:pre-wrap;margin-bottom:12px">${p.overview}</div>
+          ${p.q2 ? `<div class="note-label">希望收获</div><div class="note-bubble" style="margin-bottom:10px">${p.q2}</div>` : ''}
+          ${p.q3 ? `<div class="note-label">每日时间</div><div class="note-bubble" style="margin-bottom:10px">${p.q3}</div>` : ''}
+          ${p.q4 ? `<div class="note-label">应对困难</div><div class="note-bubble" style="margin-bottom:10px">${p.q4}</div>` : ''}
+          ${p.image_url ? `<img src="${p.image_url}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;margin-top:4px;cursor:pointer" onclick="openLightbox('${p.image_url}')">` : ''}
+        </div>
+        <div class="plan-card-actions">
+          ${p.deleted
+            ? `<button class="plan-restore-btn" onclick="restorePlan(${p.id})">↩ 复原计划</button>`
+            : `<button class="plan-del-btn" onclick="deletePlan(${p.id}, '${p.name}')">🗑 删除计划</button>`
+          }
+        </div>
+      </div>
+    </div>
+  `).join('')
+}
+
+async function deletePlan(id, name) {
+  if (!confirm(`确定删除「${name}」的计划表吗？\n可在此处复原。`)) return
+  await db.from('plans').update({ deleted: true, deleted_at: new Date().toISOString() }).eq('id', id)
+  loadData()
+}
+
+async function restorePlan(id) {
+  if (!confirm('确定复原此计划表吗？')) return
+  await db.from('plans').update({ deleted: false, deleted_at: null }).eq('id', id)
+  loadData()
+}
+
+function renderRoomMembers(members) {
+  const el = document.getElementById('roomMemberList')
+  document.getElementById('roomMemberCount').textContent = members.length ? `共 ${members.length} 人` : ''
+  if (!members.length) { el.innerHTML = '<div class="empty" style="padding:24px 0">暂无成员</div>'; return }
+  el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:10px;padding:8px 0">${members.map(m => `
+    <div style="display:flex;align-items:center;gap:8px;background:var(--bg);border-radius:10px;padding:10px 14px;">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">${m.name.charAt(0)}</div>
+      <div>
+        <div style="font-weight:700;font-size:14px">${m.name}</div>
+        <div style="font-size:12px;color:var(--text-muted)">${m.show_progress ? '📊 公开进度' : '🔒 进度私密'} · ${new Date(m.joined_at).toLocaleDateString('zh-CN')}</div>
+      </div>
+    </div>
+  `).join('')}</div>`
+}
+
+function renderFeedback(feedbacks) {
+  const el = document.getElementById('feedbackList')
+  document.getElementById('feedbackCount').textContent = feedbacks.length ? `共 ${feedbacks.length} 条` : ''
+  if (!feedbacks.length) { el.innerHTML = '<div class="empty" style="padding:24px 0">暂无反馈</div>'; return }
+  el.innerHTML = feedbacks.map(f => `
+    <div class="feedback-card">
+      <div class="feedback-avatar">${(f.name || '匿').charAt(0)}</div>
+      <div class="feedback-body">
+        <div class="feedback-meta">
+          <span class="feedback-name">${f.name || '匿名'}</span>
+          <span class="feedback-time">${new Date(f.timestamp).toLocaleString('zh-CN', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
+        </div>
+        <div class="feedback-content">${f.content}</div>
+      </div>
+    </div>
+  `).join('')
+}
+
+function setFilter(f) {
+  currentFilter = f
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'))
+  document.getElementById(`tab-${f}`).classList.add('active')
+  applyFilter()
+}
+
+function applyFilter() {
+  const totalDays = parseInt(settings.totalDays || 30)
+  const q = document.getElementById('searchInput').value.trim().toLowerCase()
+  let filtered = allUsers
+  if (currentFilter === 'done')     filtered = filtered.filter(u => u.totalChecked >= (allRounds.find(r=>r.id===viewingRoundId)?.total_days || 30))
+  if (currentFilter === 'progress') filtered = filtered.filter(u => u.missedDays === 0 && !u.isDeleted && u.totalChecked > 0)
+  if (currentFilter === 'missed')   filtered = filtered.filter(u => u.missedDays > 0 && !u.isDeleted)
+  if (currentFilter === 'deleted')  filtered = filtered.filter(u => u.isDeleted)
+  if (currentFilter === 'all')      filtered = filtered.filter(u => !u.isDeleted)
+  if (q) filtered = filtered.filter(u => u.name.toLowerCase().includes(q))
+  renderUsers(filtered)
+}
+
+function renderUsers(users) {
+  const list = document.getElementById('userList')
+  if (!users.length) { list.innerHTML = '<div class="empty">暂无记录</div>'; return }
+  list.innerHTML = users.map(u => `
+    <div class="user-card" id="card-${CSS.escape(u.name)}">
+      <div class="user-header" onclick="toggleCard('${u.name.replace(/'/g,"\\'")}')">
+        <div class="user-avatar" style="${u.isDeleted ? 'opacity:.4' : ''}">${u.name.charAt(0)}</div>
+        <div class="user-info">
+          <div class="user-name" style="${u.isDeleted ? 'text-decoration:line-through;color:var(--text-muted)' : ''}">${u.name}</div>
+          <div class="user-meta">
+            ${u.isDeleted
+              ? '<span class="tag danger" style="background:#fff5f5;color:#c53030">已删除</span>'
+              : `<span class="tag success">✓ 已打卡 ${u.totalChecked} 天</span>
+                 ${u.missedDays > 0 ? `<span class="tag warning">⚠ 未打卡 ${u.missedDays} 天</span>` : '<span class="tag muted">无缺卡</span>'}
+                 <span class="tag muted">剩余 ${u.remainingDays} 天</span>`
+            }
+          </div>
+        </div>
+        <span class="user-chevron">›</span>
+      </div>
+      <div class="user-body">
+        <div class="checkin-grid">
+          ${u.checkins.map(c => `
+            <div class="checkin-thumb ${c.deleted ? 'deleted-overlay' : ''}">
+              ${c.deleted ? '<div class="deleted-label">已删除</div>' : ''}
+              <img src="${c.image_url}" alt="" loading="lazy" ${!c.deleted ? `onclick="openLightbox('${c.image_url}')"` : ''} style="cursor:${c.deleted?'default':'pointer'}">
+              <div class="thumb-date">${formatDate(c.date)}</div>
+              ${c.note ? `<div class="note-bubble"><div class="note-label">💬 心得</div>${c.note}</div>` : ''}
+              <div class="thumb-actions">
+                ${c.deleted
+                  ? `<button class="thumb-btn restore" onclick="restoreCheckin(${c.id})">↩ 复原</button>`
+                  : `<button class="thumb-btn del" onclick="deleteCheckin(${c.id}, '${u.name}', '${c.date}')">🗑 删除</button>`
+                }
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        ${u.isDeleted
+          ? `<button class="btn-restore-user" onclick="restoreUser('${u.name.replace(/'/g,"\\'")}')">↩ 恢复此打卡者</button>`
+          : `<div class="danger-zone">
+               <span>危险操作</span>
+               <button class="btn-danger" onclick="deleteUser('${u.name.replace(/'/g,"\\'")}')">🗑 删除此打卡者</button>
+             </div>`
+        }
+      </div>
+    </div>
+  `).join('')
+}
+
+function toggleCard(name) {
+  document.getElementById(`card-${CSS.escape(name)}`)?.classList.toggle('open')
+}
+
+function filterUsers() {
+  applyFilter()
+}
+
+function renderRoundBar() {
+  const bar = document.getElementById('roundBar')
+  if (!allRounds.length) {
+    bar.innerHTML = `<span style="font-size:13px;color:var(--text-muted)">尚未创建轮次</span>
+      <button class="round-tab new-round" onclick="openRoundModal()">＋ 创建第一轮</button>`
+    return
+  }
+  bar.innerHTML = allRounds.map(r => `
+    <button class="round-tab ${r.id === viewingRoundId ? 'active' : ''}" onclick="switchRound(${r.id})">
+      ${r.name}
+      <span class="round-badge">${r.is_active ? '进行中' : '已结束'}</span>
+    </button>
+  `).join('')
+  + (allRounds.find(r => r.is_active)
+      ? `<button class="round-tab" style="border-color:#a78bfa;color:#7c3aed" onclick="openRoundEdit()">✏️ 编辑</button>`
+      : '')
+  + `<button class="round-tab new-round" onclick="openRoundModal()">＋ 新一轮</button>`
+}
+
+function openRoundModal() {
+  const n = allRounds.length + 1
+  document.getElementById('roundName').value = `第${['一','二','三','四','五','六','七','八','九','十'][n-1] || n}轮`
+  document.getElementById('roundPlanDeadline').value = ''
+  document.getElementById('roundStartDate').value = new Date().toISOString().split('T')[0]
+  document.getElementById('roundTotalDays').value = 21
+  document.getElementById('roundModal').classList.remove('hidden')
+}
+
+async function createRound() {
+  const name = document.getElementById('roundName').value.trim()
+  const plan_deadline = document.getElementById('roundPlanDeadline').value
+  const startDate = document.getElementById('roundStartDate').value
+  const totalDays = parseInt(document.getElementById('roundTotalDays').value)
+  if (!name || !startDate || !totalDays) { alert('请填写轮次名称、打卡开始日期和天数'); return }
+
+  await db.from('rounds').update({ is_active: false }).eq('is_active', true)
+  const { data: newRound } = await db.from('rounds').insert({
+    name, start_date: startDate, total_days: totalDays,
+    plan_deadline: plan_deadline || null, is_active: true
+  }).select().single()
+  document.getElementById('roundModal').classList.add('hidden')
+  if (newRound) viewingRoundId = newRound.id
+  loadData()
+}
+
+async function switchRound(id) {
+  viewingRoundId = id
+  loadData()
+}
+
+function openRoundEdit() {
+  const r = allRounds.find(r => r.is_active)
+  if (!r) return
+  document.getElementById('editRoundId').value = r.id
+  document.getElementById('editRoundName').value = r.name
+  document.getElementById('editRoundPlanDeadline').value = r.plan_deadline || ''
+  document.getElementById('editRoundStart').value = r.start_date
+  document.getElementById('editRoundDays').value = r.total_days
+  document.getElementById('roundEditModal').classList.remove('hidden')
+}
+
+async function saveRoundEdit() {
+  const id = document.getElementById('editRoundId').value
+  const name = document.getElementById('editRoundName').value.trim()
+  const plan_deadline = document.getElementById('editRoundPlanDeadline').value
+  const start_date = document.getElementById('editRoundStart').value
+  const total_days = parseInt(document.getElementById('editRoundDays').value)
+  if (!name || !start_date || !total_days) { alert('请填写完整信息'); return }
+  const btn = document.querySelector('#roundEditModal .btn-full.primary')
+  btn.disabled = true; btn.textContent = '保存中…'
+  const { error } = await db.from('rounds').update({
+    name, start_date, total_days, plan_deadline: plan_deadline || null
+  }).eq('id', id)
+  btn.disabled = false; btn.textContent = '保存'
+  if (error) { alert('保存失败：' + error.message); return }
+  document.getElementById('roundEditModal').classList.add('hidden')
+  loadData()
+}
+
+async function deleteUser(name) {
+  if (!confirm(`确定删除打卡者「${name}」？\n\n将删除其所有打卡记录和计划表，可在「已删除」中恢复。`)) return
+  await db.from('checkins').update({ deleted: true, deleted_at: new Date().toISOString() }).eq('name', name).eq('deleted', false)
+  await db.from('plans').update({ deleted: true, deleted_at: new Date().toISOString() }).eq('name', name)
+  loadData()
+}
+
+async function restoreUser(name) {
+  if (!confirm(`确定恢复打卡者「${name}」？`)) return
+  await db.from('checkins').update({ deleted: false, deleted_at: null }).eq('name', name)
+  await db.from('plans').update({ deleted: false, deleted_at: null }).eq('name', name)
+  loadData()
+}
+
+async function deleteCheckin(id, name, date) {
+  if (!confirm(`确定要删除 ${name} 在 ${date} 的打卡记录吗？\n\n删除后可在「已删除」分类中复原。`)) return
+  await db.from('checkins').update({ deleted: true, deleted_at: new Date().toISOString() }).eq('id', id)
+  loadData()
+}
+
+async function restoreCheckin(id) {
+  if (!confirm('确定要复原这条打卡记录吗？')) return
+  await db.from('checkins').update({ deleted: false, deleted_at: null }).eq('id', id)
+  loadData()
+}
+
+function formatDate(d) {
+  return new Date(d + 'T00:00:00').toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+}
+
+function openLightbox(src) { document.getElementById('lightboxImg').src = src; document.getElementById('lightbox').classList.remove('hidden') }
+function closeLightbox() { document.getElementById('lightbox').classList.add('hidden') }
+
+function openSettings() {
+  document.getElementById('settingAppName').value = settings.appName || ''
+  document.getElementById('settingPlanDeadline').value = settings.planDeadline || ''
+  document.getElementById('settingPassword').value = ''
+  document.getElementById('settingsModal').classList.remove('hidden')
+}
+function closeSettings() { document.getElementById('settingsModal').classList.add('hidden') }
+
+async function saveSettings() {
+  const btn = document.querySelector('#settingsModal .btn-full.primary')
+  btn.disabled = true; btn.textContent = '保存中…'
+
+  const updates = [
+    { key: 'appName', value: document.getElementById('settingAppName').value.trim() },
+    { key: 'planDeadline', value: document.getElementById('settingPlanDeadline').value },
+  ]
+  const newPwd = document.getElementById('settingPassword').value.trim()
+  if (newPwd) updates.push({ key: 'adminPassword', value: newPwd })
+
+  for (const row of updates) {
+    const { error } = await db.from('settings').upsert(row, { onConflict: 'key' })
+    if (error) {
+      alert('保存失败：' + error.message)
+      btn.disabled = false; btn.textContent = '保存'
+      return
+    }
+  }
+  btn.disabled = false; btn.textContent = '保存'
+  closeSettings()
+  loadData()
+}
+</script>
+</body>
+</html>
