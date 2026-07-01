@@ -528,7 +528,9 @@ async function loadUserData() {
 
 async function loadPlanCard() {
   document.getElementById('planCard').classList.remove('hidden')
-  const { data: plan } = await db.from('plans').select('overview').eq('name', userName).single()
+  let q = db.from('plans').select('overview').eq('name', userName).eq('deleted', false)
+  if (activeRound) q = q.eq('round_id', activeRound.id)
+  const { data: plan } = await q.maybeSingle()
   if (plan?.overview) {
     const text = plan.overview.length > 80 ? plan.overview.slice(0, 80) + '…' : plan.overview
     document.getElementById('planOverviewText').textContent = text
