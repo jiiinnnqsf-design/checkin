@@ -513,6 +513,7 @@ async function loadUserData() {
     document.getElementById('checkedTodayState').style.display = 'block'
     document.getElementById('checkedTodayState').innerHTML = `<div class="missed-badge" style="display:inline-flex">⏳ 打卡将于 ${activeRound.start_date} 开始</div>`
     renderHistory(list)
+    loadPlanCard()
     return
   }
 
