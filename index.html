@@ -506,6 +506,15 @@ async function loadUserData() {
     document.getElementById('missedText').textContent = `还有 ${stats.missedDays} 天未打卡`
   }
 
+  // 未到开始日期，禁止打卡
+  if (activeRound && today < activeRound.start_date) {
+    document.getElementById('checkInForm').style.display = 'none'
+    document.getElementById('checkedTodayState').style.display = 'block'
+    document.getElementById('checkedTodayState').innerHTML = `<div class="missed-badge" style="display:inline-flex">⏳ 打卡将于 ${activeRound.start_date} 开始</div>`
+    renderHistory(list)
+    return
+  }
+
   if (checkedToday) {
     document.getElementById('checkInForm').style.display = 'none'
     document.getElementById('checkedTodayState').style.display = 'block'
