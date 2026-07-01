@@ -606,6 +606,20 @@ submitBtn.addEventListener('click', async () => {
 
   const today = new Date().toISOString().split('T')[0]
 
+  // 检查是否在打卡期限内
+  if (activeRound) {
+    if (today < activeRound.start_date) {
+      showAlert(`打卡尚未开始，将于 ${activeRound.start_date} 开始`)
+      submitBtn.disabled = false; submitBtn.textContent = '打卡'; return
+    }
+    const endDate = new Date(activeRound.start_date)
+    endDate.setDate(endDate.getDate() + parseInt(activeRound.total_days))
+    if (new Date(today) >= endDate) {
+      showAlert('本轮打卡已结束')
+      submitBtn.disabled = false; submitBtn.textContent = '打卡'; return
+    }
+  }
+
   // Check duplicate
   const { data: existing } = await db.from('checkins').select('id').eq('name', userName).eq('date', today)
   if (existing?.length) {
@@ -630,7 +644,9 @@ submitBtn.addEventListener('click', async () => {
   if (insErr) { showAlert('打卡失败：' + insErr.message); submitBtn.disabled = false; submitBtn.textContent = '打卡'; return }
 
   // Show success
-  const { data: allCheckins } = await db.from('checkins').select('*').eq('name', userName)
+  let scq = db.from('checkins').select('*').eq('name', userName).eq('deleted', false)
+  if (activeRound) scq = scq.eq('round_id', activeRound.id)
+  const { data: allCheckins } = await scq
   const stats = calcStats(allCheckins || [])
   document.getElementById('statChecked').textContent = stats.totalChecked
   document.getElementById('statRemain').textContent = stats.remainingDays
