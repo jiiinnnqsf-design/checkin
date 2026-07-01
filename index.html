@@ -476,7 +476,7 @@ function calcStats(checkins) {
   const startDate = activeRound ? activeRound.start_date : (appSettings.startDate || new Date().toISOString().split('T')[0])
   const start = new Date(startDate); start.setHours(0,0,0,0)
   const today = new Date(); today.setHours(0,0,0,0)
-  const daysPassed = Math.max(1, Math.floor((today - start) / 86400000) + 1)
+  const daysPassed = today < start ? 0 : Math.floor((today - start) / 86400000) + 1
   const expectedDays = Math.min(daysPassed, totalDays)
   const totalChecked = checkins.length
   const missedDays = Math.max(0, expectedDays - totalChecked)
@@ -501,7 +501,8 @@ async function loadUserData() {
   document.getElementById('progressPct').textContent = pct + '%'
   document.getElementById('progressFill').style.width = pct + '%'
 
-  if (stats.missedDays > 0) {
+  const roundStarted = !activeRound || new Date().toISOString().slice(0,10) >= activeRound.start_date
+  if (stats.missedDays > 0 && roundStarted) {
     document.getElementById('missedBadge').classList.remove('hidden')
     document.getElementById('missedText').textContent = `还有 ${stats.missedDays} 天未打卡`
   }
