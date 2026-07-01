@@ -341,8 +341,17 @@
   </div>
 
   <!-- Quick entry cards -->
-  <div style="display:flex;gap:8px;margin-top:4px">
-    <a href="/checkin/todos.html" style="flex:1;text-decoration:none">
+  <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
+    <a href="/checkin/plan.html" style="flex:1;min-width:70px;text-decoration:none">
+      <div style="background:#f0f4ff;border:1.5px solid #b8c8f0;border-radius:14px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;transition:transform .2s,box-shadow .2s"
+        onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(80,100,200,0.18)'"
+        onmouseout="this.style.transform='';this.style.boxShadow=''">
+        <div style="font-size:20px;line-height:1">📋</div>
+        <div style="color:#3a50a8;font-size:13px;font-weight:800">打卡前计划表</div>
+        <div style="color:#8090c8;font-size:11px;line-height:1.4">填写<br>计划</div>
+      </div>
+    </a>
+    <a href="/checkin/todos.html" style="flex:1;min-width:70px;text-decoration:none">
       <div style="background:#f2f8f4;border:1.5px solid #b8dfc8;border-radius:14px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;transition:transform .2s,box-shadow .2s"
         onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(90,170,126,0.18)'"
         onmouseout="this.style.transform='';this.style.boxShadow=''">
