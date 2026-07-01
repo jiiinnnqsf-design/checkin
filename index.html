@@ -317,6 +317,34 @@
     </div>
   </div>
 
+  <!-- 补卡卡片 -->
+  <div class="card hidden" id="makeupCard">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div class="card-title" style="margin-bottom:0">📅 补卡</div>
+      <span style="font-size:12px;color:var(--text-muted)">补打漏掉的日期</span>
+    </div>
+    <div class="alert" id="makeupAlert"></div>
+    <div class="input-wrap" style="margin-bottom:12px">
+      <label>选择补卡日期</label>
+      <select id="makeupDateSelect" style="width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:12px;font-size:15px;outline:none;font-family:inherit;color:var(--text);background:var(--card)">
+        <option value="">-- 选择日期 --</option>
+      </select>
+    </div>
+    <div class="upload-area" id="makeupUploadArea" style="margin-bottom:12px">
+      <input type="file" id="makeupImageInput" accept="image/*">
+      <div id="makeupUploadPlaceholder">
+        <div class="upload-icon">📸</div>
+        <div style="font-weight:600;margin-bottom:4px">点击上传图片</div>
+        <div class="upload-hint">支持 JPG、PNG、HEIC 等格式</div>
+      </div>
+      <img class="preview-img" id="makeupPreviewImg" src="" alt="">
+    </div>
+    <textarea id="makeupNote" placeholder="💭 写下当天的心得体会…（选填）" maxlength="300"
+      style="width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:12px;font-size:14px;font-family:inherit;resize:none;height:80px;outline:none;transition:border-color .2s;color:var(--text);margin-bottom:12px"
+      onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+    <button class="btn btn-primary" id="makeupSubmitBtn" disabled>提交补卡</button>
+  </div>
+
   <div class="card hidden" id="historyCard">
     <div class="card-title">打卡历史</div>
     <div class="history-grid" id="historyGrid"></div>
@@ -533,6 +561,27 @@ async function loadUserData() {
 
   renderHistory(list)
   loadPlanCard()
+  loadMakeupCard(list)
+}
+
+function loadMakeupCard(checkins) {
+  if (!activeRound) return
+  const today = new Date().toISOString().slice(0,10)
+  if (today < activeRound.start_date) return
+  const checkedDates = new Set(checkins.map(c => c.date))
+  const start = new Date(activeRound.start_date)
+  const missed = []
+  for (let d = new Date(start); ; d.setDate(d.getDate()+1)) {
+    const ds = d.toISOString().slice(0,10)
+    if (ds >= today) break
+    if (!checkedDates.has(ds)) missed.push(ds)
+  }
+  if (!missed.length) return
+  const card = document.getElementById('makeupCard')
+  card.classList.remove('hidden')
+  const sel = document.getElementById('makeupDateSelect')
+  sel.innerHTML = '<option value="">-- 选择日期 --</option>' +
+    missed.map(d => `<option value="${d}">${d.replace(/-/g,'/')} 未打卡</option>`).join('')
 }
 
 async function loadPlanCard() {
@@ -674,6 +723,57 @@ submitBtn.addEventListener('click', async () => {
     `累计已打卡 ${stats.totalChecked} 天，还剩 ${stats.remainingDays} 天，继续加油！`
   launchConfetti()
   setTimeout(() => loadUserData(), 1500)
+})
+
+// 补卡
+document.getElementById('makeupDateSelect').addEventListener('change', () => {
+  const val = document.getElementById('makeupDateSelect').value
+  document.getElementById('makeupSubmitBtn').disabled = !val || !document.getElementById('makeupImageInput').files[0]
+})
+document.getElementById('makeupImageInput').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return
+  document.getElementById('makeupPreviewImg').src = URL.createObjectURL(file)
+  document.getElementById('makeupPreviewImg').style.display = 'block'
+  document.getElementById('makeupUploadPlaceholder').style.display = 'none'
+  document.getElementById('makeupSubmitBtn').disabled = !document.getElementById('makeupDateSelect').value
+})
+document.getElementById('makeupSubmitBtn').addEventListener('click', async () => {
+  const date = document.getElementById('makeupDateSelect').value
+  const file = document.getElementById('makeupImageInput').files[0]
+  if (!date || !file) return
+  const btn = document.getElementById('makeupSubmitBtn')
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>提交中…'
+  document.getElementById('makeupAlert').style.display = 'none'
+
+  const { data: existing } = await db.from('checkins').select('id').eq('name', userName).eq('date', date)
+  if (existing?.length) {
+    const el = document.getElementById('makeupAlert')
+    el.textContent = '该日期已有打卡记录'; el.className = 'alert error'; el.style.display = 'block'
+    btn.disabled = false; btn.textContent = '提交补卡'; return
+  }
+
+  const ext = file.name.split('.').pop()
+  const safeName = encodeURIComponent(userName).replace(/%/g,'_')
+  const path = `${safeName}/${date}-makeup-${Date.now()}.${ext}`
+  const { error: upErr } = await db.storage.from('checkin-images').upload(path, file)
+  if (upErr) {
+    const el = document.getElementById('makeupAlert')
+    el.textContent = '图片上传失败：' + upErr.message; el.className = 'alert error'; el.style.display = 'block'
+    btn.disabled = false; btn.textContent = '提交补卡'; return
+  }
+  const { data: { publicUrl } } = db.storage.from('checkin-images').getPublicUrl(path)
+  const note = document.getElementById('makeupNote').value.trim()
+  const { error: insErr } = await db.from('checkins').insert({
+    name: userName, date, image_url: publicUrl, note: note || null,
+    round_id: activeRound ? activeRound.id : null, is_makeup: true
+  })
+  if (insErr) {
+    const el = document.getElementById('makeupAlert')
+    el.textContent = '补卡失败：' + insErr.message; el.className = 'alert error'; el.style.display = 'block'
+    btn.disabled = false; btn.textContent = '提交补卡'; return
+  }
+  btn.textContent = '✅ 补卡成功！'
+  setTimeout(() => loadUserData(), 1000)
 })
 
 function showAlert(msg) {
